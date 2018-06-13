@@ -201,11 +201,10 @@ var TEXT_RENDERER = {
             if (i !== 0 && currentTexts[currentTexts.length-1].length + curText.length <= this.CHAR_PER_LINE) { // merge
                 currentTexts[currentTexts.length-1] += curText;
             } else {
-                if (curText.length > this.CHAR_PER_LINE) { // too long
-                    currentTexts.push(curText.substring(0,this.CHAR_PER_LINE));
-                    currentTexts.push(curText.substring(this.CHAR_PER_LINE, curText.length));
-                } else { // ok
-                    currentTexts.push(curText);
+                let idx = 0;
+                while (idx < curText.length) {
+                    currentTexts.push(curText.substring(idx, Math.min(idx + this.CHAR_PER_LINE, curText.length)));
+                    idx += this.CHAR_PER_LINE;
                 }
             }
         }
@@ -230,11 +229,12 @@ var TEXT_RENDERER = {
         this.shrink_lock = true;
     },
 
-    checkFirstLines: function() {
+    checkFirstLines: function(text) {
         for (let i = 0; i < this.texts.length; ++ i) {
             let line = this.texts[i];
             if (line.state === line.FRONT || line.state === line.APPEAR) {
-                line.startMoving((Math.random() - 0.5) * U.WIDTH / (U.HEIGHT / 2));
+                if (line.text !== text)
+                    line.startMoving((Math.random() - 0.5) * U.WIDTH / (U.HEIGHT / 2));
             }
         }
     },
@@ -317,15 +317,14 @@ var TEXT_RENDERER = {
 }
 
 function Textline(text, delay) {
-    console.log('new Textline', text);
+    console.log('new Textline', text, delay);
     this.x = U.center.X;
     this.y = U.center.Y;
     this.alpha = 0;
     this.fontsize = TEXT_RENDERER.FONT_SIZE;
     this.text = text;
     this.state = this.HIDE;
-    setTimeout(this.state = this.APPEAR, delay);
-    setTimeout(TEXT_RENDERER.checkFirstLines(), delay);
+    this.delay = delay;
 }
 
 Textline.prototype = {
@@ -348,11 +347,6 @@ Textline.prototype = {
             ctx.fillText( this.text[idx], endX, endY);
             endX += this.fontsize;
         }
-    },
-
-    start: function () {
-        TEXT_RENDERER.checkFirstLines();
-        this.state = this.APPEAR;
     },
 
     update : function (ctx) {
@@ -394,8 +388,15 @@ Textline.prototype = {
         if (this.y < 0) {
             this.state = this.DEAD;
         }
-
-        this.draw(ctx);
+        if (this.state !== this.HIDE) {
+            this.draw(ctx);
+        } else {
+            this.delay -= RENDERER.FRAME_DUR;
+            if (this.delay <= 0) {
+                this.state = this.APPEAR;
+                TEXT_RENDERER.checkFirstLines(this.text);
+            }
+        }
     },
 
     startMoving : function (dist) {
@@ -552,7 +553,7 @@ function init() {
     TEXT_RENDERER.init();
     setInterval(function () {PARTICLE_RENDERER.updateParticles();TEXT_RENDERER.updateTexts();}, RENDERER.FRAME_DUR);
     setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
-    // test();
+    test();
 }
 
 function test() {
@@ -566,16 +567,16 @@ window.onload = init;
 function mockInput(baseTime) {
     var baseTime = baseTime || 0;
     setTimeout(function() {
-        enterText('我叫不可以', 4);
+        enterText('我要数数1，', 4);
     }, baseTime);
 
     setTimeout(function() {
-        enterText('我叫不可以这样你好依图欢迎你', 4);
+        enterText('我要给你数数1，我要数数2，', 4);
     }, baseTime);
 
-    // setTimeout(function() {
-    //     enterText('马桑'+'不可以这样'+'你好依图欢迎你', 4);
-    // }, baseTime + 800);
+    setTimeout(function() {
+        enterText('我要给你数数1，我要数数2，我要数数3，我要数数4', 4);
+    }, baseTime + 200);
 
     // setTimeout(function() {
     //     enterText('马桑德'+TEXT_RENDERER.SEPARATOR+'不可以这样'+TEXT_RENDERER.SEPARATOR+'你好依图欢迎你你好我欢迎你啦啦啦', 4);
