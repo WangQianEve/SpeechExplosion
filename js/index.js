@@ -155,7 +155,7 @@ var TEXT_RENDERER = {
     LINE_LIMIT : 5,
     texts : [],
     numOfLines : 0,
-    CHAR_PER_LINE : 6,
+    CHAR_PER_LINE : 8,
     FADEIN_STEP : 0.05,
     FADEOUT_STEP : 0.1,
     MOVE_ALPHA_STEP : 0.005,
@@ -169,6 +169,9 @@ var TEXT_RENDERER = {
     FONT_SIZE : 100,
     FONT_SIZE_STEP : 0.15,
 
+    shrink_end : 0,
+    shrink_lock : false,
+
     DEFAULTS : ["复杂语言", "八卦能力", "虚构故事", "认知与思考", "交流与想象", "描述与重塑", "讲述历史", "记录当下", "描绘未来", "认知革命"],
 
     init : function() {
@@ -180,7 +183,7 @@ var TEXT_RENDERER = {
         };
 
         this.default = true;
-        this.enterText();
+        // this.enterText();
     },
 
     removeFirst : function() {
@@ -218,51 +221,58 @@ var TEXT_RENDERER = {
             enterText(this.DEFAULTS[Math.floor(Math.random() * (this.DEFAULTS.length - 0.01))]);
     },
 
+    releaseShrinkLock : function () {
+        this.shrink_lock = false;
+    },
+
+    shrinkLock: function() {
+        this.shrink_end = new Date().getTime() + 450;
+        this.shrink_lock = true;
+    },
+
+    checkFirstLines: function() {
+        for (let i = 0; i < this.texts.length; ++ i) {
+            let line = this.texts[i];
+            if (line.state === line.FRONT || line.state === line.APPEAR) {
+                line.startMoving((Math.random() - 0.5) * U.WIDTH / (U.HEIGHT / 2));
+            }
+        }
+    },
+
     setText : function (text) {
         this.default = false;
         let orgTexts = text.split(this.SEPARATOR);
         if (orgTexts.length === 0) return;
         let currentTexts = this.squeezeLines(orgTexts);
-        // console.log(currentTexts);
         if (currentTexts.length === this.numOfLines) { // same length
-            console.log('same length',this.texts.length);
             for (let i = 1; i <= Math.min(this.texts.length , 2); ++i) { // update last two lines
                 this.texts[this.texts.length - i].text = currentTexts[this.numOfLines - i];
-                console.log('update',this.texts[this.texts.length - i].text);
+                console.log('update 2',this.texts[this.texts.length - i].text);
             }
         } else if (currentTexts.length > this.numOfLines) { // add lines
-            console.log('add');
             if (currentTexts.length - 1 === this.numOfLines) { // add one line
-                if ( this.texts.length > 0 ) { // update one line
+                if ( this.texts.length > 0 ) { // update one
                     this.texts[this.texts.length - 1].text = currentTexts[currentTexts.length - 2];
+                    console.log('update 1',this.texts[this.texts.length - 1].text);
                 }
             }
-            let dup = false;
-            let lastDist = 0;
-            for (let i = 0; i < this.texts.length; ++ i) {
-                let line = this.texts[i];
-                if (line.state === line.FRONT) {
-                    if (dup === true) {
-                        line.startMoving(lastDist * (-1));
-                    } else {
-                        line.startMoving((Math.random() - 0.5) * U.WIDTH / (U.HEIGHT / 2));
-                        dup = true;
-                    }
-                    lastDist = line.move_dist;
-                }
-            }
-            if (this.numOfLines === 0) {
+            let time = 0;
+            if (this.numOfLines === 0) { // shrink
                 let length = currentTexts[currentTexts.length - 1].length;
                 PARTICLE_RENDERER.shrink((TEXT_RENDERER.FONT_SIZE - 20 ) * length / 2, (TEXT_RENDERER.FONT_SIZE - 20) / 2);
+                this.shrinkLock();
                 setTimeout(function () {
-                    TEXT_RENDERER.texts.push(new Textline(currentTexts[currentTexts.length - 1], false));
+                    TEXT_RENDERER.releaseShrinkLock();
                 }, 450);
+                time = 450;
             } else {
-                TEXT_RENDERER.texts.push(new Textline(currentTexts[currentTexts.length - 1], false));
+                if (this.shrink_lock === true) {
+                    time = Math.min(this.shrink_end - new Date().getTime(), 450);
+                }
             }
+            TEXT_RENDERER.texts.push(new Textline(currentTexts[currentTexts.length - 1], time));
         }
         this.numOfLines = currentTexts.length;
-        // console.log('add', this.numOfLines);
     },
 
     //从ctx获取文字所占的像素点
@@ -306,13 +316,16 @@ var TEXT_RENDERER = {
     }
 }
 
-function Textline(text) {
+function Textline(text, delay) {
+    console.log('new Textline', text);
     this.x = U.center.X;
     this.y = U.center.Y;
     this.alpha = 0;
     this.fontsize = TEXT_RENDERER.FONT_SIZE;
     this.text = text;
-    this.state = this.APPEAR;
+    this.state = this.HIDE;
+    setTimeout(this.state = this.APPEAR, delay);
+    setTimeout(TEXT_RENDERER.checkFirstLines(), delay);
 }
 
 Textline.prototype = {
@@ -335,6 +348,11 @@ Textline.prototype = {
             ctx.fillText( this.text[idx], endX, endY);
             endX += this.fontsize;
         }
+    },
+
+    start: function () {
+        TEXT_RENDERER.checkFirstLines();
+        this.state = this.APPEAR;
     },
 
     update : function (ctx) {
@@ -383,6 +401,7 @@ Textline.prototype = {
     startMoving : function (dist) {
         this.state = this.MOVE;
         this.move_frame = 0;
+        this.alpha = 1;
         this.move_dist = dist;
     },
 
@@ -538,7 +557,7 @@ function init() {
 
 function test() {
     // mockContinuousInput();
-    mockInput(1000);
+    mockInput(300);
 
 }
 
