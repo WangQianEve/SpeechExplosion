@@ -1,0 +1,899 @@
+<!-- Based on index-v2-beibei.html -->
+<!-- Modified by qian since April 18th -->
+
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>Yitu</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+
+    <script type="text/javascript" src="js/jquery-3.3.1.js"></script>
+    <script type="text/javascript" src="js/underscore-min.js"></script>
+    <script type="text/javascript" src="js/cubicBezier.js"></script>
+
+    <style type="text/css">
+
+        @font-face {
+            font-family: 'HYWenHei';
+            src: url('fonts/HYWenHei-55W-4.ttf');
+        }
+
+        @font-face {
+            font-family: 'FangZhengLT';
+            src: url('fonts/FangZheng-LT.TTF');
+        }
+
+        body {
+            top: 0;
+            width: 100%;
+            padding: 0;
+            font-family: FangZhengLT;
+            font-size: 60px;
+            color: white;
+            /*background-image: url("./images/bgParticles/背景粒子-particles_181.png");*/
+            background-repeat: no-repeat;
+            /*background-position: center;*/
+            background-color: black;
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100%;
+            position: absolute;
+        }
+
+        #bgTextCanvas {
+            display: block;
+            top: 1080px;
+            border: 1px solid green;
+        }
+
+        .flash-text {
+            animation: blink 1s;
+        }
+
+        @keyframes blink {
+            0% { opacity: 100; }
+            50% { opacity: 0; }
+            60% { opacity: 100; }
+            70% { opacity: 0; }
+            80% { opacity: 100; }
+        }
+
+        .fade-out {
+            animation: disappear 0.8s;
+        }
+
+        @keyframes disappear {
+            0% { opacity: 100; }
+            100% { opacity: 0; }
+        }
+
+        .fade-in {
+            animation: appear 0.3s;
+        }
+
+        @keyframes appear {
+            0% { opacity: 0; }
+            100% { opacity: 100; }
+        }
+
+        .invisible {
+            opacity: 0;
+        }
+        .visible {
+            opacity: 100;
+        }
+        #bgTextCanvas {
+            display: none;
+        } 
+    </style>
+</head>
+
+<body>
+    <canvas id="particleCanvas">
+    </canvas>
+    <canvas id="textCanvas">        
+    </canvas>
+    <canvas id="bgTextCanvas">
+    </canvas>
+    <canvas id="bgParticleCanvas">
+    </canvas>
+    <div style="position:absolute;">
+        <img src="images/gradient2.png" width="100%" />
+    </div>
+</body>
+
+<script>
+
+    /*可更改的设置 */
+
+    // 多行动效
+    var CHAR_PER_LINE = 9;
+    var fontSizes = [120, 90, 60, 0]; // 字体大小
+    var alphaRange = 150; //  透明度范围
+    var separator = ' '; // should be consistent with speech
+    var textAnimDuration = 30; // 单位为帧
+    var textAnimCurve = generateCubicBezier(.48, .1, .52, 1);
+
+    // 背景浮动粒子
+    var bgSpeedMin = 0.1; // 最小速度
+    var bgSpeedRange = 0.5; // 最大速度 = range + min
+    var bgDirectionStep = Math.PI / 180 * 20; // 每次转向最大多少度
+    var bgSize = 20; // 点数
+
+    // 爆炸动效
+    var speedUpDuration = 1;
+    var speedDownDuration = 1;
+    var shrinkDuration = 1.5;
+    var shrinkSpeedUpCurve = cubicBezierGenerator(.98,.02,.95,.02); // 貌似没有用
+    var speedUpCurve = cubicBezierGenerator(0.05, 1.09, 0.14, 0.9);
+    var slowDownCurve = function(t) {
+        var slowFunc = cubicBezierGenerator(1,.04,.94,.28);
+        return slowFunc(1-t);
+    };
+
+    // 轮播
+    var flashDuration = 3; // 静态时循环词卡的间隔
+    var texts = ["复杂语言", "八卦能力", "虚构故事", "认知与思考", "交流与想象", "描述与重塑", "讲述历史", "记录当下", "描绘未来", "认知革命"];
+
+    /*如果不熟悉脚本，以下不建议修改*/
+    var MAX_LINES = 3;
+
+    var stableDuration = 0;
+    var shrinkToIdleDuration = 1;
+    var stableToIdleDuration = 1;
+
+    var clientWidth = window.innerWidth;
+    var clientHeight = window.innerHeight;
+    var fps = 60;
+
+    var currentTexts = [];
+
+    // states: IDLE -> FLASHING -> EXPLODING -> SHRINKING -> IDLE
+    var FLASHING ="flashing";
+    var RECOGNIZING = "recognizing";
+    var EXPLODING = "exploding";
+    var SHRINKING = "shrinking";
+    var STABLE = "stable";
+    var IDLE = "idle";
+    var ANIM = "anim";
+
+    var textStatus = "idle";
+    var textAnimStatus = "idle";
+
+    var explodeDuration = speedUpDuration + speedDownDuration;
+    var upPercent = speedUpDuration/explodeDuration;
+    var downPercent = speedDownDuration/explodeDuration;
+
+    var textLineLimit = 0;
+
+    var waitStable = _.debounce(function() {
+        if (textStatus === RECOGNIZING) {
+            setTextStatus(STABLE);
+        }
+        waitIdle();
+    }, stableDuration*1000);
+
+    var waitIdle = _.debounce(function() {
+        if (textStatus === STABLE) {
+            explodeAndFadeout();
+        }
+    }, stableToIdleDuration*1000);
+
+    var receiveText = (function() {
+        var textLastTime = "";
+        var greyIdxLastTime = 0;
+
+        return function(text, greyIdx) {
+            if (text !== textLastTime || greyIdx !== greyIdxLastTime) {
+                enterText(text, greyIdx);
+            }
+        }
+    })();    
+
+    // 这里算正式开始
+
+    // 初始化canvas
+    var bgParticleCanvas = initCanvasById("bgParticleCanvas");
+    var particleCanvas = initCanvasById("particleCanvas");
+    var textCanvas = initCanvasById("textCanvas");
+    var bgTextCanvas = initCanvasById("bgTextCanvas");
+
+    var bgParticleCtx = bgParticleCanvas.getContext("2d");
+    var particleCtx = particleCanvas.getContext("2d");
+    var textCtx = textCanvas.getContext("2d");
+    var bgTextCtx = bgTextCanvas.getContext("2d");
+
+    // Init Particles
+    var smallBlurParticle = "./images/particle1.png";
+    var largeBlurParticle = "./images/particle2.png";
+    var middleFullParticle = "./images/particle3.png";
+    var largeFullParticle = "./images/particle4.png";
+    var smallFullParticle = "./images/particle5.png";
+
+    var particlePrototypes = [];
+    for (var i = 0; i < 10; i++) {
+        var p = {
+            path: 'images/Oval' + i + ".png"
+        };
+        particlePrototypes.push(p);
+    }
+    particlePrototypes.push({path: 'images/Oval0.png'});
+    particlePrototypes.push({path: 'images/Oval0.png'});
+    particlePrototypes.push({path: 'images/Oval0.png'});
+
+    _.each(particlePrototypes, function(image) {
+        var img = new Image();
+        img.src = image.path;
+        image.img = img;
+    });
+
+    var tmpNum = 0;
+
+    var lineDist = [0];
+    var linePos = [0];
+    var fontDist = [0];
+    var tmp = 0;
+    for (var i = 1 ; i < fontSizes.length; ++i) {
+        lineDist.push(fontSizes[i-1]);
+        tmp += fontSizes[i-1];
+        linePos.push(tmp);
+        fontDist.push(fontSizes[i-1] - fontSizes[i]);
+    }
+    var alphaStep = Math.floor(alphaRange/((MAX_LINES-1)*textAnimDuration));
+
+    var textAnimInterval;
+    var frameDuration = 16;
+
+    var animFrame = 0;
+    var prevTextLength = 0;
+    var bgParticles;
+
+    function setTextStatus(status) {
+        if (textStatus !== status) {
+            console.log('[状态转移]: ', textStatus, ' -> ', status);
+            textStatus = status;
+        }
+    }
+
+    // 常用函数
+    function pythagorean(dx, dy) {
+        return Math.sqrt( dx*dx + dy*dy );
+    }
+
+    function calDist(p1, p2) {
+        var dx = p2.x - p1.x;
+        var dy = p2.y - p1.y;
+        return pythagorean(dx, dy);
+    }
+
+    function clearCtx(ctx) {
+        ctx.clearRect(0, 0, clientWidth, clientHeight);
+    }
+
+    function drawText(text, ctx, lineNumber) {
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        var i = lineNumber;
+        var alpha = (255 - (lineNumber * textAnimDuration - animFrame) * alphaStep)/255;
+        ctx.fillStyle = "rgba(255,255,255,"+alpha+")";
+
+        var fontsize = Math.floor(fontSizes[lineNumber] + textAnimCurve[animFrame] * fontDist[lineNumber]);
+        ctx.font = fontsize + "px HYWenHei";
+
+        var l = text.length; //居中
+        // var l = CHAR_PER_LINE; //左对齐 
+
+        var endY = 0.5*clientHeight + 0.5 * fontsize + textAnimCurve[animFrame] * lineDist[lineNumber] - linePos[lineNumber];
+
+        for (var idx = 0; idx < text.length; idx++) {
+            var endX = 0.5*(clientWidth- l * fontsize ) + idx * fontsize + 0.5 * fontsize;
+            ctx.fillText( text[idx], endX, endY);
+        }
+    }
+
+    function updateTextAnim() {
+        ctx = textCtx;
+        clearCtx(ctx);
+        animFrame--;
+        // draw
+        for (var i = 1; i < MAX_LINES; i++) {
+            var currentLineNumber = currentTexts.length - 1 - i;
+            if (currentLineNumber < 0) break;
+            drawText(currentTexts[currentLineNumber], ctx, i);
+        }
+        // stop
+        if (animFrame == 0) {
+            clearInterval(textAnimInterval);
+            textAnimStatus = IDLE;
+            drawText(currentTexts[currentTexts.length-1], ctx, 0);
+        }
+    }
+
+    function clearAndDrawBg() {
+        var ctx = bgTextCtx;
+        clearCtx(ctx);
+        if (currentTexts.length > 0)
+            drawText(currentTexts[currentTexts.length-1], ctx, 0);
+    }
+
+    function clearAndDrawText(text, ctx) { // greyIdx depricated
+        if (textAnimStatus == ANIM) return;
+        if (textStatus == EXPLODING) {
+            clearCtx(ctx);
+            return;
+        }
+        if (currentTexts.length == 1 || currentTexts.length == prevTextLength) {
+            clearCtx(ctx);
+            for (var i = MAX_LINES-1; i >= 0; i--) {
+                var currentLineNumber = currentTexts.length - 1 - i;
+                if (currentLineNumber < 0) continue;
+                drawText(currentTexts[currentLineNumber], ctx, i);
+            }
+        } else if (currentTexts.length > prevTextLength) {
+            textAnimStatus = ANIM; // below only once
+            animFrame = textAnimDuration;
+            textAnimInterval = setInterval(updateTextAnim,frameDuration);
+        }
+        prevTextLength = currentTexts.length;
+    }
+
+    // 速度曲线相关
+    function cubicBezierGenerator(p1x, p1y, p2x, p2y) {
+        var cubicBezier = simplifiedCubicBezier(p1x, p1y, p2x, p2y);
+        return function(t) {
+            var results = solveCubicBezier(0, p1x, p2x, 1, t);
+            for (var i = 0; i < results.length; i++) {
+                var temp = results[i];
+                if (temp >= 0 && temp <= 1) {
+                    return cubicBezier(temp)[1];
+                }
+            }
+            return 0;
+        };
+    }
+
+    function explodeCurve(v0, upPercent, downPercent, totalDuration) {
+        var upTime = upPercent * totalDuration;
+        var downTime = downPercent * totalDuration;
+        return function(t) {
+            var tPercent = t/totalDuration;
+            if (tPercent < upPercent) {
+                return v0 + 999*v0*speedUpCurve(t/upTime);
+            } else {
+                return 1000*v0*slowDownCurve((t-upTime)/downTime);
+            }
+        }
+    }
+
+    // v-t 函数，t单位是s, 输入是初始的v0
+    function explodeVtCurveGenerator(v0) {
+        return explodeCurve(v0, upPercent, downPercent, explodeDuration);
+    }
+
+    function initCanvasById(id) {
+        var _canvas = document.getElementById(id);
+        _canvas.width = clientWidth;
+        _canvas.height = clientHeight;
+        return _canvas;
+    }
+
+    //Particle的定义
+    function Particle(x, y) {
+        this.x = x;
+        this.y = y;
+        this.isStopped = false;
+        this.totalDist = 0;
+        this.vProjection = 1;
+
+        this.direction = Math.random() * 2 * Math.PI;
+
+        this.destx = window.innerWidth * Math.random() - window.innerWidth / 2;
+        this.desty = window.innerHeight * Math.random() - window.innerHeight / 2;
+        this.velocity = bgSpeedMin + Math.random() * bgSpeedRange;
+
+        var particleIdx = Math.random()*particlePrototypes.length;
+        this.particleType = Math.floor(particleIdx);
+        this.size = 8 + Math.floor(Math.random() * 12);
+    }
+
+    Particle.prototype.getCoordinate = function() {
+        return {x: this.x, y: this.y};
+    };
+
+    Particle.prototype.enableLogging = function() {
+        this.logging = true;
+    };
+
+    Particle.prototype.stop = function() {
+        this.isStopped = true;
+    };
+
+    Particle.prototype.draw = function(ctx) {
+        ctx.drawImage(particlePrototypes[this.particleType].img, this.x, this.y, this.size, this.size);
+    };
+
+    Particle.prototype.setTarget = function(x, y) {
+        this.tx = x;
+        this.ty = y;
+    };
+
+    Particle.prototype.setStart = function(x, y) {
+        this.sx = x;
+        this.sy = y;
+    };
+
+    Particle.prototype.setEnd = function(x, y) {
+        this.ex = x;
+        this.ey = y;
+        this.totalDist = calDist({x: this.ex, y: this.ey}, {x: this.sx, y: this.sy});
+    };
+
+    //根据sx,sy,tx,ty计算方向
+    Particle.prototype.calDirectionTowardTarget = function() {
+        var cosTheta = (this.ex - this.sx)/ calDist({x: this.ex, y: this.ey}, {x: this.sx, y: this.sy});
+        this.cosTheta = cosTheta;
+        var sinTheta = Math.sqrt(1 - cosTheta*cosTheta);
+        this.sinTheta = (this.ey - this.sy) > 0 ? sinTheta : -sinTheta;
+        if (this.logging) {
+            console.log('[towardTarget][sin]: ', this.sinTheta, '[cos]: ', this.cosTheta);
+        }
+    };
+
+    //根据sx,sy,ex,ey计算方向
+    Particle.prototype.calDirectionAwayTarget = function() {
+        var dist = calDist({x: this.tx, y: this.ty}, {x: this.sx, y: this.sy});
+        var depth = 400;
+        var slashDist = pythagorean(depth, dist);
+        var cosAlpha = dist/slashDist;
+        this.vProjection = cosAlpha;
+
+        var delta = 0;
+        var tx = Math.floor(this.tx + (Math.random() - 0.5)*delta);
+        var ty = Math.floor(this.ty + (Math.random() - 0.5)*delta);
+
+        // theta是和水平正方向的夹角 
+        var cosTheta = (this.sx - tx)/ calDist({x: tx, y: ty}, {x: this.sx, y: this.sy});
+        this.cosTheta = cosTheta;
+        var sinTheta = Math.sqrt(1 - cosTheta*cosTheta);
+        this.sinTheta = (this.sy - ty) > 0 ? sinTheta : -sinTheta;
+        if (this.logging) {
+            console.log('[awayTarget][sin]: ', this.sinTheta, '[cos]: ', this.cosTheta);
+        }
+    };
+
+    //v-t curve 是速度时间曲线，时间单位是s, 对于帧数，t = frame/60
+    Particle.prototype.setVtCurve = function(vtCurve) {
+        this.vtCurve = vtCurve;
+    };
+
+    Particle.prototype.crawl = function(ctx) {
+        var size = 5;
+        ctx.drawImage(particlePrototypes[this.particleType].img, this.x-size/2, this.y-size/2, size, size);
+    };
+
+    Particle.prototype.explode = function(ctx, frame) {
+        var distanceIdx = 0.2;
+        var t = frame/60;
+        var v = this.vProjection * distanceIdx * this.vtCurve(t);
+        if (v <= 0) {
+            this.draw(ctx);
+        } else {
+            this.x += v * (this.destx) / (500 * this.velocity);
+            this.y += v * (this.desty) / (500 * this.velocity);
+            this.draw(ctx);
+        }
+    };
+
+    Particle.prototype.shrink = function(ctx, frame) {
+        var distanceIdx = 0.5;
+
+        if (this.isStopped) {
+            this.crawl(ctx);
+        } else {
+            var currentDist = calDist({x: this.x, y: this.y}, {x: this.sx, y: this.sy});
+            if (currentDist >= this.totalDist) { //已经到位了
+                this.x = this.ex;
+                this.y = this.ey;
+                this.stop();
+                this.crawl(ctx);
+            } else {
+                var t = frame/60;
+                var v = distanceIdx * this.vtCurve(t);
+                var vx = this.cosTheta * v;
+                var vy = this.sinTheta * v;
+                this.x += vx;
+                this.y += vy;
+                this.draw(ctx);
+            }
+        }
+    };
+
+    //背景浮动的粒子 匀速
+    Particle.prototype.float = function (ctx) {
+        var lr = 1;
+        if (Math.random() > 0.5) lr = -1;
+        this.direction += lr * Math.random() * bgDirectionStep;
+        this.direction = this.direction % (Math.PI * 2);
+        var dx = this.velocity * Math.cos(this.direction);
+        var dy = this.velocity * Math.sin(this.direction);
+        this.x += dx;
+        this.y += dy;
+
+        if (this.x < 0) {
+            this.x = 0;
+            this.direction += Math.PI;
+        } else if (this.x > clientWidth) {
+            this.direction += Math.PI;
+            this.x = clientWidth;
+        }
+        
+        if (this.y < 0) {
+            this.direction += Math.PI;
+            this.y = 0;
+        } else if (this.y > clientHeight) {
+            this.direction += Math.PI;
+            this.y = clientHeight;
+        }
+        this.draw(ctx);
+    }
+
+    function cancelFlashingText() {
+        $(textCanvas).removeClass('flash-text');
+    }
+
+    function explodeAndFadeout() {
+        textLineLimit = 0;
+        prevWholeTextLength = 0;
+
+        clearAndDrawBg();
+        clearCtx(textCtx);
+        var pixels = getTextPixelsFromCtx(bgTextCtx);
+        var particles = getExplodeParticlesFromPixels(pixels);
+
+        // fadeoutParticles();
+
+        var currentFrame = 0;
+        function particleExplodeAnimate() {
+            currentFrame += 1;
+            if (currentFrame > fps * explodeDuration) {
+                currentTexts = [];
+                setTextStatus(IDLE);
+                idle();
+                return;
+            }
+
+            clearCtx(particleCtx);
+            _.each(particles, function(particle) {
+                particle.explode(particleCtx, currentFrame);
+            });
+            requestAnimationFrame(particleExplodeAnimate);
+        }
+        setTextStatus(EXPLODING);
+        // textAnimStatus = ANIM;
+        particleExplodeAnimate();
+
+        return particles;
+    }
+
+    function explodeCallback(particles) {
+        startToShrink(getNextText(), particles, shrinkCallback);
+    }
+
+    function fadeInTextCanvas() {
+        $(textCanvas).removeClass('fade-in');
+        clearAndDrawText(currentTexts[0], textCtx);
+        $(textCanvas).addClass("fade-in");
+    }
+
+    function flashText(text, callback) {
+        setTextStatus(FLASHING);
+
+        $(particleCanvas).removeClass('invisible');
+
+        setTimeout(function () {
+            if (textStatus == FLASHING) {
+                cancelFlashingText();
+                if (callback) {
+                    callback();
+                }                
+            }
+        }, flashDuration*500);
+    }
+
+    // currently without cursor
+    function flashTextWithCursor(text, ctx, greyIdx) {
+        clearAndDrawText(text, ctx, greyIdx);
+    }
+
+    function fadeoutParticles() {
+        $(particleCanvas).removeClass('invisible').removeClass('fade-in');
+        setTimeout(function() {
+            clearCtx(particleCtx);
+            $(particleCanvas).removeClass('fade-out').addClass('invisible');
+        }, 800);
+        $(particleCanvas).addClass('fade-out');
+    }
+
+    function flashCallback() {
+        startToExplode(currentTexts[0], explodeCallback);
+    }
+
+    function generateCubicBezier(a,b,c,d) {
+        var gen = cubicBezierGenerator(a,b,c,d);
+        var curve = [];
+        for(var i = 0; i <= textAnimDuration; ++i) {
+            curve.push(gen(i/textAnimDuration));
+        }
+        return curve;
+    };
+
+    //从ctx获取文字所占的像素点
+    function getTextPixelsFromCtx(ctx, interval) {
+        interval = interval || 3;
+        var imageData = ctx.getImageData(0, 0, clientWidth, clientHeight);
+        var points = [];
+        for (var x = 0; x < imageData.width; x += 1) {
+            for (var y = 0; y < imageData.height; y += 1) {
+                var i = (y * imageData.width + x) * 4;
+                if (imageData.data[i + 3] > 128) {
+                    if (x % interval === 0 && y % interval === 0) { //取一定的间隔
+                        points.push({x: x, y: y});
+                    }
+                }
+            }
+        }
+        return points;
+    }
+
+    //生成背景的粒子
+    function getBgParticles() {
+        bgParticles = [];
+        var count = bgSize;
+        for ( var i = 0; i < count; i++){
+            var particle = new Particle(window.innerWidth * Math.random(), window.innerHeight * Math.random());
+            bgParticles.push(particle);
+        }
+    }
+
+    function getExplodeParticlesFromPixels(pixels) {
+        var center = {x: clientWidth / 2, y: clientHeight / 2};
+        var particles = _.map(pixels, function (pixel, idx) {
+            var particle = new Particle(pixel.x, pixel.y);
+            particle.setStart(pixel.x, pixel.y);
+            particle.setTarget(center.x, center.y);
+            var vt = explodeVtCurveGenerator(Math.random() * 1.5 + 0.05);
+            particle.setVtCurve(vt);
+            particle.calDirectionAwayTarget();
+            return particle;
+        });
+        return particles;
+    }
+
+    // called in explodeCallback
+    function getNextText() {
+        var text = texts[tmpNum];
+        tmpNum ++;
+        if (tmpNum === texts.length){
+            tmpNum = 0;
+        }
+        return text;
+    }
+
+    function idle() {
+        if (currentTexts.length == 0) {
+            currentTexts.push(getNextText());
+            fadeInTextCanvas();
+        }
+        clearCtx(particleCtx);
+        flashText(currentTexts[0], flashCallback);
+    }
+
+    function startToExplode(text, callback) {
+        // textAnimStatus = ANIM;
+        prevWholeTextLength = 0;
+
+        clearAndDrawBg();
+        clearCtx(textCtx);
+        var pixels = getTextPixelsFromCtx(bgTextCtx);
+        var particles = getExplodeParticlesFromPixels(pixels);
+
+        var currentFrame = 0;
+        function particleExplodeAnimate() {
+            currentFrame += 1;
+            if (currentFrame > fps * explodeDuration) {
+                // textAnimStatus = IDLE;
+                callback(particles);
+                return;
+            }
+
+            clearCtx(particleCtx);
+            _.each(particles, function(particle) {
+                particle.explode(particleCtx, currentFrame);
+            });
+            requestAnimationFrame(particleExplodeAnimate);
+        }
+        setTextStatus(EXPLODING);
+        particleExplodeAnimate();
+
+        return particles;
+    }
+
+    function shrinkCallback() {
+        clearCtx(particleCtx);
+        setTextStatus(IDLE);
+        setTimeout(function() {
+            if (textStatus === IDLE) {
+                idle();
+            }
+        }, shrinkToIdleDuration*1000);
+    }
+
+    function startToShrink(text, originalParticles, callback) {
+        if (textStatus !== EXPLODING) {
+            return;
+        }
+
+        currentTexts = [];
+        currentTexts.push(text);
+        setTextStatus(SHRINKING);
+
+        var textAppearSeconds = 0.3;
+
+        clearAndDrawBg();
+        var pixels = getTextPixelsFromCtx(bgTextCtx);
+
+        var newCount = pixels.length;
+
+        var secondParticles = [];
+        _.each(originalParticles, function(particle, idx) {
+            var pixelIdx = Math.floor(Math.random() * newCount);
+            var pixel = pixels[pixelIdx];
+
+            var coordinate = particle.getCoordinate();
+            particle.setStart(coordinate.x, coordinate.y);
+            particle.setEnd(pixel.x, pixel.y);
+            // var shrinkVt = shrinkVtCurveGenerator(Math.random()*20 + 1000);
+            var shrinkVt = shrinkVtCurveGenerator(Math.random()* 10);
+            particle.setVtCurve(shrinkVt);
+            particle.calDirectionTowardTarget();
+            secondParticles.push(particle);
+        });
+
+        var currentFrame = 0;
+        var appear = false;
+        function particleShrinkAnimate() {
+            currentFrame += 1;
+            if (currentFrame >= fps * shrinkDuration) {
+                callback();
+                return;
+            }
+
+            if (currentFrame > (shrinkDuration - textAppearSeconds)*fps ) { //需要显示新的text
+                if (textStatus === SHRINKING && !appear) {
+                    fadeInTextCanvas();
+                    appear = true;
+                }
+            }
+
+            if (textStatus === RECOGNIZING) {
+                $(particleCtx).addClass("fade-out");
+            }
+
+            clearCtx(particleCtx);
+            _.each(secondParticles, function(particle) {
+                particle.shrink(particleCtx, currentFrame);
+            });
+            requestAnimationFrame(particleShrinkAnimate);
+        }
+        particleShrinkAnimate();
+    }
+
+    function shrinkVtCurveGenerator(v0) {
+        var explodeFunc = explodeCurve(v0, 0.3, 0.7, shrinkDuration);
+        return function(t) {
+            return explodeFunc(shrinkDuration - t/shrinkDuration);
+        };
+    }
+
+    var prevWholeTextLength = 0;
+    function setCurrentText(text) {
+        if (textAnimStatus == ANIM || textStatus == EXPLODING) {
+            console.log("ignored");
+            return;
+        }
+        setTextStatus(RECOGNIZING);
+        var orgCurrentTexts = text.split(separator);
+        currentTexts = [];
+        if (orgCurrentTexts.length > 0) currentTexts.push(orgCurrentTexts[0]);
+        else return;
+        for (var i = 1 ; i < orgCurrentTexts.length; i++) {
+            var curText = orgCurrentTexts[i];
+            if (currentTexts[currentTexts.length-1].length + curText.length <= CHAR_PER_LINE) { // merge
+                currentTexts[currentTexts.length-1] += curText;
+            } else {
+                if (curText.length >= CHAR_PER_LINE) { // too long
+                    currentTexts.push(curText.substring(0,CHAR_PER_LINE));
+                    currentTexts.push(curText.substring(CHAR_PER_LINE, curText.length));
+                } else { // ok
+                    currentTexts.push(curText);
+                }
+            }
+        }
+        if (currentTexts.length > prevWholeTextLength) textLineLimit++;
+        prevWholeTextLength = currentTexts.length;
+        currentTexts = currentTexts.slice(currentTexts.length - textLineLimit, currentTexts.length);
+    }
+
+    function enterText(text, greyIdx) {
+        console.log("enterText", text);
+
+        setCurrentText(text);
+        flashTextWithCursor(text, textCtx, greyIdx);
+
+        waitStable();
+    }
+
+    function mockInput(baseTime) {
+        var baseTime = baseTime || 0;
+        setTimeout(function() {
+            enterText('马桑', 4);
+        }, baseTime);
+
+        setTimeout(function() {
+            enterText('马桑'+separator+'不可以这样', 4);
+        }, baseTime + 400);
+        
+        setTimeout(function() {
+            enterText('马桑'+separator+'不可以这样'+separator+'你好依图欢迎你', 4);
+        }, baseTime + 800);
+
+        setTimeout(function() {
+            enterText('马桑德'+separator+'不可以这样'+separator+'你好依图欢迎你你好我欢迎你啦啦啦', 4);
+        }, baseTime + 5200);
+
+        setTimeout(function() {
+            enterText('马桑德'+separator+'不可以这样'+separator+'你好依图欢迎你你好我欢迎', 4);
+        }, baseTime + 5500);
+    }
+
+    function mockContinuousInput() {
+        mockInput();
+        var seconds = 5;
+        setTimeout(function() {
+            mockContinuousInput();
+        }, seconds * 1000);
+    }
+
+    function setParameters(charPerLine, maxLines) {
+        CHAR_PER_LINE = charPerLine;
+        MAX_LINES = maxLines;
+    }
+
+    function setDefaultTexts(textArrays) {
+        texts = textArrays;
+    }
+
+    function updateBgParticles() {
+        clearCtx(bgParticleCtx);
+        _.each(bgParticles, function(particle) {
+            particle.float(bgParticleCtx);
+        });
+    }
+
+    getBgParticles();
+
+    setInterval(updateBgParticles, frameDuration);
+
+    idle();
+    mockContinuousInput();
+    // mockInput();
+
+</script>
+
+</html>

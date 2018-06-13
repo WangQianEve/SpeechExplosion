@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>Yitu</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+
+    <script type="text/javascript" src="js/jquery-3.3.1.js"></script>
+    <script type="text/javascript" src="js/underscore-min.js"></script>
+
+    <script type="text/javascript" src="js/cubicBezier.js"></script>
+
+    <style type="text/css">
+
+        @font-face {
+            font-family: 'HYWenHei';
+            src: url('fonts/HYWenHei-55W-4.ttf');
+        }
+
+        @font-face {
+            font-family: 'FangZhengLT';
+            src: url('fonts/FangZheng-LT.TTF');
+        }
+
+        body {
+                    top：0；    width: 100%;
+
+            padding: 0;
+            font-family: FangZhengLT;
+            font-size: 60px;
+            color: white;
+
+            /*background-image: url("./images/bgParticles/背景粒子-particles_181.png");*/
+            background-repeat: no-repeat;
+            -ms-background-size: 100%;
+            -moz-background-size: 100%;
+            -webkit-background-size: 100%;
+            -o-background-size: 100%;
+            background-size: 100%;
+            /*background-position: center;*/
+            background-color: black;
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100%;
+            position: absolute;
+        }
+
+        #bgTextCanvas {
+            display: block;
+            top: 1080px;
+            border: 1px solid green;
+        }
+
+        .flash-text {
+            animation: blink 1s;
+        }
+        @keyframes blink {
+            0% { opacity: 100; }
+            50% { opacity: 0; }
+            60% { opacity: 100; }
+            70% { opacity: 0; }
+            80% { opacity: 100; }
+        }
+
+        .fade-out {
+            animation: disappear 0.8s;
+        }
+        @keyframes disappear {
+            0% { opacity: 100; }
+            100% { opacity: 0; }
+        }
+
+        .fade-in {
+            animation: appear 0.3s;
+        }
+        @keyframes appear {
+            0% { opacity: 0; }
+            100% { opacity: 100; }
+        }
+
+        .invisible {
+            opacity: 0;
+        }
+        .visible {
+            opacity: 100;
+        }
+        #bgTextCanvas {
+            display: none;
+        } 
+    </style>
+</head>
+
+<body>
+    <canvas id="particleCanvas"></canvas>
+    <canvas id="textCanvas"></canvas>
+    <canvas id="bgTextCanvas"></canvas>
+               <div style=" position:absolute;    "> <img src="images/gradient2.png" width="100%" /></div>
+
+</body>
+<script>
+
+
+    var clientWidth = window.innerWidth;
+    var clientHeight = window.innerHeight;
+    var fontSize = 120;
+    var fps = 60;
+
+    var currentText = " "; //依图
+
+    var CHAR_PER_LINE = 10;
+    var MAX_LINES = 1;
+
+    //IDLE -> FLASHING -> EXPLODING -> SHRINKING -> IDLE
+
+    var FLASHING ="flashing";
+    var RECOGNIZING = "recognizing";
+    var EXPLODING = "exploding";
+    var SHRINKING = "shrinking";
+    var STABLE = "stable";
+    var IDLE = "idle";
+
+    var textStatus = "idle";
+
+    var idleTimer = null;
+
+    //背景更换序列帧
+    // var bgImage = [];
+    // for (var i = 0; i<150; i++){
+    //     var tempImage = "./images/背景粒子-particles_" + i + ".png";
+    //     bgImage[i] = tempImage;
+    //     console.log("***load image success!");
+    // }
+    // function change(n){
+    //     if(n == bgImage.length - 1) n = 0;  // 一共n张图片，循环替换
+    //     $('body').css("background-image", 'url(' + bgImage[n] +
+    //         ')');
+    //     n++;
+    //     setTimeout("change("+n+")", 20);
+    // }
+    // window.onload = function(){
+    //     setTimeout("change(0)", 20);
+    // }
+
+    function setTextStatus(status) {
+        if (textStatus !== status) {
+            console.log('[状态转移]: ', textStatus, ' -> ', status);
+        }
+        textStatus = status;
+    }
+
+    //常用函数
+    function pythagorean(dx, dy) {
+        return Math.sqrt( dx*dx + dy*dy );
+    }
+
+    function calDist(p1, p2) {
+        var dx = p2.x - p1.x;
+        var dy = p2.y - p1.y;
+        return pythagorean(dx, dy);
+    }
+
+    function clearCtx(ctx) {
+        ctx.clearRect(0, 0, clientWidth, clientHeight);
+    }
+
+    function drawText(text, ctx, greyIdx) {
+
+        if (_.isUndefined(greyIdx)) {
+            greyIdx = text.length;
+        }
+
+        /*
+        var maxTexts = MAX_LINES*CHAR_PER_LINE;
+
+        if (_.isUndefined(greyIdx)) {
+            greyIdx = text.length;
+        }
+
+        if (text.length > maxTexts) {
+            var diff = text.length - maxTexts;
+            text = text.slice(text.length - maxTexts, text.length);
+            greyIdx = Math.max(0, greyIdx - diff);
+        }
+        */
+
+        ctx.font = fontSize + "px HYWenHei";
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        var lines = Math.ceil(text.length/CHAR_PER_LINE);
+        var charsInLastLine = text.length-CHAR_PER_LINE*(lines-1);
+        for (var idx = 0; idx < text.length; idx++) {
+            var i = Math.floor(idx/CHAR_PER_LINE);
+            var j = idx%CHAR_PER_LINE;
+            if (idx < greyIdx) {
+                ctx.fillStyle = "white"; //            ctx.fillText(text[i], clientWidth / 2 - (fontSize * 2 / 3) * (text.length / 2 - (i + 0.5)), clientHeight / 2);
+            } else {
+                ctx.fillStyle = "grey";
+            }
+
+            var l = ( i === lines-1) ? charsInLastLine : CHAR_PER_LINE; //居中
+//            var l = CHAR_PER_LINE; //左对齐
+            var endX = 0.5*(clientWidth- l*fontSize ) + j * fontSize + 0.5 * fontSize;
+            var endY = 0.5*(clientHeight-lines*fontSize) + i * fontSize + 0.5 * fontSize;
+            ctx.fillText( text[idx], endX, endY);
+        }
+
+        /*
+        for (var i = 0; i < text.length; i++) {
+            if (i < greyIdx) {
+                ctx.fillStyle = "white"; //            ctx.fillText(text[i], clientWidth / 2 - (fontSize * 2 / 3) * (text.length / 2 - (i + 0.5)), clientHeight / 2);
+            } else {
+                ctx.fillStyle = "grey"; //            ctx.fillText(text[i], clientWidth / 2 - (fontSize * 2 / 3) * (text.length / 2 - (i + 0.5)), clientHeight / 2);
+            }
+            ctx.fillText(text[i], 0.5*(clientWidth-text.length*fontSize) + i * fontSize + 0.5 * fontSize, clientHeight / 2);
+        }
+        */
+    }
+
+    function clearAndDrawText(text, ctx, greyIdx) {
+        clearCtx(ctx);
+        drawText(text, ctx, greyIdx);
+    }
+
+
+    //速度曲线相关
+    function cubicBezierGenerator(p1x, p1y, p2x, p2y) {
+        var cubicBezier = simplifiedCubicBezier(p1x, p1y, p2x, p2y);
+        return function(t) {
+            var results = solveCubicBezier(0, p1x, p2x, 1, t);
+            for (var i = 0; i < results.length; i++) {
+                var temp = results[i];
+                if (temp >= 0 && temp <= 1) {
+                    return cubicBezier(temp)[1];
+                }
+            }
+            return 0;
+        };
+    }
+
+    //贝塞尔曲线求导
+//    0,0,  .12,.7 , .4 .89 .  1,1
+
+    //爆炸效果的持续时间
+//    var explodeDuration = 2;
+    var speedUpDuration = 0.04;
+    var speedDownDuration = 2;
+    var explodeDuration = speedUpDuration + speedDownDuration;
+    var upPercent = speedUpDuration/explodeDuration;
+    var downPercent = speedDownDuration/explodeDuration;
+
+    var speedUpCurve = cubicBezierGenerator(0.05, 1.09, 0.14, 0.9);
+    var slowDownCurve = function(t) {
+//        var slowFunc = cubicBezierGenerator(0.81, 0.09, 0.88, 0.02);
+        var slowFunc = cubicBezierGenerator(1,.04,.94,.28);
+        return slowFunc(1-t);
+    };
+
+
+    function explodeCurve(v0, upPercent, downPercent, totalDuration) {
+        var upTime = upPercent * totalDuration;
+        var downTime = downPercent * totalDuration;
+        return function(t) {
+            // t = totalDuration - t;
+            var tPercent = t/totalDuration;
+            if (tPercent < upPercent) {
+                return v0 + 999*v0*speedUpCurve(t/upTime);
+            } else {
+                return 1000*v0*slowDownCurve((t-upTime)/downTime);
+            }
+        }
+    }
+
+    // v-t 函数，t单位是s, 输入是初始的v0
+    function explodeVtCurveGenerator(v0) {
+        return explodeCurve(v0, upPercent, downPercent, explodeDuration);
+
+        /*
+        return function(t) {
+            if (t < speedUpDuration) {
+                return v0 + 999*v0*speedUpCurve(t/speedUpDuration);
+            } else {
+
+                return 1000*v0*slowDownCurve((t-speedUpDuration)/speedDownDuration);
+//                var k = 10*v0/(speedUpDuration-explodeDuration);
+//                return k*t - k*explodeDuration;
+            }
+        };
+        */
+    }
+
+    var shrinkDuration = 2.0;
+    var shrinkSpeedUpCurve = cubicBezierGenerator(.98,.02,.95,.02);
+
+    function shrinkCurve(v0, upPercent, downPercent, totalDuration) {
+        var upTime = upPercent * totalDuration;
+        var downTime = downPercent * totalDuration;
+        return function(t) {
+            var tPercent = t/totalDuration;
+            if (tPercent < upPercent) {
+                return v0 + 200*v0*speedUpCurve(t/upTime);
+            } else {
+                return 15*v0*slowDownCurve((t-upTime)/downTime);
+            }
+            // return  v0 * slowDownCurve(t);
+        }
+    }
+
+    function shrinkVtCurveGenerator(v0) {
+        var shrinkFunc = shrinkCurve(v0, 0.2, 0.8, shrinkDuration);
+        return function(t) {
+            // return shrinkFunc(shrinkDuration - t/shrinkDuration);
+            return shrinkFunc(shrinkDuration - t);
+        };
+        // return shrinkCurve(v0, upPercent2, downPercent2, explodeDuration2);
+
+        /*
+        return function(t) {
+            return v0 * shrinkSpeedUpCurve(t/shrinkDuration);
+
+//            var a = 10*v0 / (Math.pow(2, 0.9) - 1);
+//            return a * Math.pow(2, t) - a;
+
+        }
+        */
+    }
+
+    var flashDuration = 1;
+    var shrinkToIdleDuration = 3;
+    var stableDuration = 2;
+    var stableToIdleDuration = 1;
+
+    //这里算正式开始
+
+    function initCanvasById(id) {
+        var _canvas = document.getElementById(id);
+        _canvas.width = clientWidth;
+        _canvas.height = clientHeight;
+        return _canvas;
+    }
+
+    //初始化canvas
+    var particleCanvas = initCanvasById("particleCanvas");
+    var textCanvas = initCanvasById("textCanvas");
+    var bgTextCanvas = initCanvasById("bgTextCanvas");
+
+    var particleCtx = particleCanvas.getContext("2d");
+    // var bgParticleCtx = particleCanvas.getContext("2d");
+    var textCtx = textCanvas.getContext("2d");
+    var bgTextCtx = bgTextCanvas.getContext("2d");
+
+    var smallBlurParticle = "./images/particle1.png";
+    var largeBlurParticle = "./images/particle2.png";
+    var middleFullParticle = "./images/particle3.png";
+    var largeFullParticle = "./images/particle4.png";
+    var smallFullParticle = "./images/particle5.png";
+
+
+
+
+//    var particlePrototypes = [{ path: smallBlurParticle, }, { path: largeBlurParticle }, { path: middleFullParticle }, { path: largeFullParticle }, { path: smallFullParticle }];
+//    var particlePrototypes = [{ path: smallBlurParticle, }, { path: largeBlurParticle }, { path: middleFullParticle }];
+
+    var particlePrototypes = [];
+    for (var i = 0; i < 10; i++) {
+        var p = {
+            path: 'images/Oval' + i + ".png"
+        };
+        particlePrototypes.push(p);
+    }
+    particlePrototypes.push({path: 'images/Oval0.png'});
+    particlePrototypes.push({path: 'images/Oval0.png'});
+    particlePrototypes.push({path: 'images/Oval0.png'});
+
+
+    _.each(particlePrototypes, function(image) {
+        var img = new Image();
+        img.src = image.path;
+        image.img = img;
+    });
+
+    //Particle的定义
+    function Particle(x, y) {
+        this.x = x;
+        this.y = y;
+        this.isStopped = false;
+        this.totalDist = 0;
+        this.vProjection = 1;
+
+
+        this.destx = window.innerWidth * Math.random() - window.innerWidth / 2;
+        this.desty = window.innerHeight * Math.random() - window.innerHeight / 2;
+        this.velocity = Math.random();
+
+
+        var particleIdx = Math.random()*particlePrototypes.length;
+        this.particleType = Math.floor(particleIdx);
+
+        this.size = 8 + Math.floor(Math.random() * 12);
+
+        /*
+        if (particleIdx < 2) { //模糊的
+            this.size = 15 + Math.floor(Math.random()* 5);
+        } else {
+            this.size = 8 + Math.floor(Math.random()*5);
+        }
+        */
+    }
+
+    Particle.prototype.getCoordinate = function() {
+        return {x: this.x, y: this.y};
+    };
+
+    Particle.prototype.enableLogging = function() {
+        this.logging = true;
+    };
+
+    Particle.prototype.stop = function() {
+        this.isStopped = true;
+    };
+
+    Particle.prototype.draw = function(ctx) {
+//        ctx.drawImage(particlePrototypes[this.particleType].img, this.x-this.size/2, this.y-this.size/2, this.size, this.size);
+        ctx.drawImage(particlePrototypes[this.particleType].img, this.x, this.y, this.size, this.size);
+    };
+
+    Particle.prototype.setTarget = function(x, y) {
+        this.tx = x;
+        this.ty = y;
+    };
+
+    Particle.prototype.setStart = function(x, y) {
+        this.sx = x;
+        this.sy = y;
+    };
+
+    Particle.prototype.setEnd = function(x, y) {
+        this.ex = x;
+        this.ey = y;
+        this.totalDist = calDist({x: this.ex, y: this.ey}, {x: this.sx, y: this.sy});
+    };
+
+    //根据sx,sy,tx,ty计算方向
+
+    Particle.prototype.calDirectionTowardTarget = function() {
+        var cosTheta = (this.ex - this.sx)/ calDist({x: this.ex, y: this.ey}, {x: this.sx, y: this.sy});
+        this.cosTheta = cosTheta;
+        var sinTheta = Math.sqrt(1 - cosTheta*cosTheta);
+        this.sinTheta = (this.ey - this.sy) > 0 ? sinTheta : -sinTheta;
+        if (this.logging) {
+            console.log('[towardTarget][sin]: ', this.sinTheta, '[cos]: ', this.cosTheta);
+        }
+    };
+
+    //根据sx,sy,ex,ey计算方向
+    Particle.prototype.calDirectionAwayTarget = function() {
+        var dist = calDist({x: this.tx, y: this.ty}, {x: this.sx, y: this.sy});
+
+        var depth = 400;
+        var slashDist = pythagorean(depth, dist);
+        var cosAlpha = dist/slashDist;
+        this.vProjection = cosAlpha;
+//        if (this.logging) {
+//            console.log('[vProjection]: ', this.vProjection);
+//        }
+        var delta = 0;
+        var tx = Math.floor(this.tx + (Math.random() - 0.5)*delta);
+        var ty = Math.floor(this.ty + (Math.random() - 0.5)*delta);
+
+
+
+
+//theta是和水平正方向的夹角 
+        var cosTheta = (this.sx - tx)/ calDist({x: tx, y: ty}, {x: this.sx, y: this.sy});
+        this.cosTheta = cosTheta;
+        var sinTheta = Math.sqrt(1 - cosTheta*cosTheta);
+        this.sinTheta = (this.sy - ty) > 0 ? sinTheta : -sinTheta;
+        if (this.logging) {
+            console.log('[awayTarget][sin]: ', this.sinTheta, '[cos]: ', this.cosTheta);
+        }
+    };
+
+    //v-t curve 是速度时间曲线，时间单位是s, 对于帧数，t = frame/60
+    Particle.prototype.setVtCurve = function(vtCurve) {
+        this.vtCurve = vtCurve;
+    };
+
+    Particle.prototype.crawl = function(ctx) {
+//        ctx.drawImage(particlePrototypes[this.particleType].img, this.x-this.size/2, this.y-this.size/2, 2, 2);
+        var size = 5;
+        ctx.drawImage(particlePrototypes[this.particleType].img, this.x-size/2, this.y-size/2, size, size);
+    };
+
+    Particle.prototype.explode = function(ctx, frame) {
+        var distanceIdx = 0.2;
+        var t = frame/60;
+        var v = this.vProjection * distanceIdx * this.vtCurve(t);
+        if (v <= 0) {
+            this.draw(ctx);
+        } else {
+            // var vx = this.cosTheta * v;
+            // var vy = this.sinTheta * v;
+            // this.x += vx * 0.8;
+            // this.y += vy * 2;
+            this.x += v * (this.destx) / (500 * this.velocity);
+            this.y += v * (this.desty) / (500 * this.velocity);
+            this.draw(ctx);
+        }
+    };
+
+    Particle.prototype.shrink = function(ctx, frame) {
+        var distanceIdx = 0.5;
+
+        if (this.isStopped) {
+            this.crawl(ctx);
+        } else {
+            var currentDist = calDist({x: this.x, y: this.y}, {x: this.sx, y: this.sy});
+            if (currentDist >= this.totalDist) { //已经到位了
+                this.x = this.ex;
+                this.y = this.ey;
+                this.stop();
+                this.crawl(ctx);
+            } else {
+                var t = frame/60;
+                //暴力方法解决shrinkcurve
+                var v = distanceIdx * this.vtCurve(t);
+                // if(frame < 60) v = v * t *(t/20);
+                // else if(frame<65) v = v * t *t/10;
+                // else if (frame<=90) v = v * t;
+
+                var vx = this.cosTheta * v;
+                var vy = this.sinTheta * v;
+                this.x += vx;
+                this.y += vy;
+                this.draw(ctx);
+            }
+        }
+    };
+
+    //背景浮动的粒子
+    Particle.prototype.float = function (ctx) {
+        this.x = this.destx;
+        this.y = this.desty;
+        this.draw(ctx);
+    }
+
+
+    //从ctx获取文字所占的像素点
+    function getTextPixelsFromCtx(ctx, interval) {
+        interval = interval || 3;
+        var imageData = ctx.getImageData(0, 0, clientWidth, clientHeight);
+        var points = [];
+        var counter = 0;
+        for (var x = 0; x < imageData.width; x += 1) {
+            for (var y = 0; y < imageData.height; y += 1) {
+                var i = (y * imageData.width + x) * 4;
+                if (imageData.data[i + 3] > 128) {
+                    if (x % interval === 0 && y % interval === 0) { //取一定的间隔
+                        points.push({x: x, y: y});
+                    }
+                }
+            }
+        }
+//        console.log('[getTextPixelsFromCtx] counter: ', counter);
+        return points;
+    }
+
+    //生成背景的粒子
+    function getBgParticles() {
+        var particles = [];
+        // for ( var i = 0; i < Math.floor(100*Math.random()); i++){
+        for ( var i = 0; i < 5; i++){
+            var particle = new Particle(window.innerWidth * (Math.random() - 2), window.innerHeight * Math.random() - 2);
+            // particles.push(particle);
+            // particle.draw(particleCtx);
+        }
+        // particleCtx.translate(150, 150);
+        // _.each(particles, function(particle) {
+        //     particle.draw(bgParticleCtx);
+        // });
+    }
+
+    getBgParticles();
+
+    function getExplodeParticlesFromPixels(pixels) {
+        var center = {x: clientWidth / 2, y: clientHeight / 2};
+        var particles = _.map(pixels, function (pixel, idx) {
+            var particle = new Particle(pixel.x, pixel.y);
+            particle.setStart(pixel.x, pixel.y);
+            particle.setTarget(center.x, center.y);
+            var vt = explodeVtCurveGenerator(Math.random() * 1.5 + 0.05);
+            particle.setVtCurve(vt);
+            particle.calDirectionAwayTarget();
+            return particle;
+        });
+        return particles;
+    }
+
+    function startToExplode(text, callback) {
+        if (textStatus !== FLASHING) {
+            return ;
+        }
+        clearCtx(textCtx);
+        setTextStatus(EXPLODING);
+
+        clearAndDrawText(text, bgTextCtx);
+        var pixels = getTextPixelsFromCtx(bgTextCtx);
+        var particles = getExplodeParticlesFromPixels(pixels);
+
+        var currentFrame = 0;
+        function particleExplodeAnimate() {
+            currentFrame += 1;
+            if (currentFrame > fps * explodeDuration) {
+                callback(particles);
+                return;
+            }
+
+            clearCtx(particleCtx);
+            _.each(particles, function(particle) {
+                particle.explode(particleCtx, currentFrame);
+            });
+            requestAnimationFrame(particleExplodeAnimate);
+        }
+        particleExplodeAnimate();
+
+        return particles;
+    }
+
+    function explodeAndFadeout(text) {
+        clearAndDrawText(text, bgTextCtx);
+        var pixels = getTextPixelsFromCtx(bgTextCtx);
+        var particles = getExplodeParticlesFromPixels(pixels);
+
+        fadeoutParticles();
+
+        var currentFrame = 0;
+        function particleExplodeAnimate() {
+            currentFrame += 1;
+            if (currentFrame > fps * explodeDuration) {
+                return;
+            }
+
+            clearCtx(particleCtx);
+            _.each(particles, function(particle) {
+                particle.explode(particleCtx, currentFrame);
+            });
+            requestAnimationFrame(particleExplodeAnimate);
+        }
+        particleExplodeAnimate();
+
+        return particles;
+    }
+
+
+    function fadeInTextCanvas() {
+        clearAndDrawText(currentText, textCtx);
+        $(textCanvas).addClass("fade-in");
+    }
+
+    function startToShrink(text, originalParticles, callback) {
+        if (textStatus !== EXPLODING) {
+            return;
+        }
+
+        setTextStatus(SHRINKING);
+        setCurrentText(text);
+        $(textCanvas).removeClass('fade-in');
+
+        var textAppearSeconds = 0.3;
+
+        clearAndDrawText(text, bgTextCtx);
+        var pixels = getTextPixelsFromCtx(bgTextCtx);
+
+//        console.log('originalCount: ', originalParticles.length, 'newCount: ', pixels.length);
+        var newCount = pixels.length;
+
+        var secondParticles = [];
+        _.each(originalParticles, function(particle, idx) {
+            var pixelIdx = Math.floor(Math.random() * newCount);
+            var pixel = pixels[pixelIdx];
+
+            var coordinate = particle.getCoordinate();
+            particle.setStart(coordinate.x, coordinate.y);
+            particle.setEnd(pixel.x, pixel.y);
+//            var shrinkVt = shrinkVtCurveGenerator(Math.random()*20 + 1000);
+            var shrinkVt = shrinkVtCurveGenerator(Math.random()* 10);
+            particle.setVtCurve(shrinkVt);
+            particle.calDirectionTowardTarget();
+            secondParticles.push(particle);
+        });
+
+        var currentFrame = 0;
+        function particleShrinkAnimate() {
+            currentFrame += 1;
+            if (currentFrame >= fps * shrinkDuration) {
+                callback();
+                return;
+            }
+
+            if (currentFrame > (shrinkDuration - textAppearSeconds)*fps ) { //需要显示新的text
+                if (textStatus === SHRINKING) {
+                    fadeInTextCanvas();
+                }
+            }
+
+            if (textStatus === RECOGNIZING) {
+                $(particleCtx).addClass("fade-out");
+            }
+
+            clearCtx(particleCtx);
+            _.each(secondParticles, function(particle) {
+                particle.shrink(particleCtx, currentFrame);
+            });
+            requestAnimationFrame(particleShrinkAnimate);
+        }
+        particleShrinkAnimate();
+    }
+
+    function flashTextWithCursor(text, ctx, greyIdx) {
+
+        if (_.isUndefined(greyIdx)) {
+            greyIdx = text.length; 
+        }
+        /*
+        var maxTexts = MAX_LINES*CHAR_PER_LINE;
+
+        if (_.isUndefined(greyIdx)) {
+            greyIdx = text.length;
+        }
+
+        if (text.length > maxTexts) {
+            var diff = text.length - maxTexts;
+            text = text.slice(text.length - maxTexts, text.length);
+            greyIdx = Math.max(0, greyIdx - diff);
+        }
+        */
+
+        var counter = 0;
+        clearAndDrawText(text, ctx, greyIdx);
+
+        // function drawTextWithCursor() {
+        //     counter += 1;
+        //     if (textStatus !== RECOGNIZING) {
+        //         return;
+        //     }
+
+        //     clearAndDrawText(text, ctx, greyIdx);
+        //     /*
+        //     var endLocation = 0.5*(clientWidth-text.length*fontSize) + text.length * fontSize;
+        //     if (counter % fps < fps/2) {
+        //         ctx.fillStyle = "white";
+        //         ctx.fillRect(endLocation, clientHeight/2 - fontSize/2, fontSize/2, fontSize);
+        //     }
+        //     */
+
+        //     var lines = Math.ceil(text.length/CHAR_PER_LINE);
+        //     var charsInLastLine = text.length-CHAR_PER_LINE*(lines-1);
+
+        //     if (counter % fps < fps/2) {
+        //         var idx = Math.max(text.length-1, 0);
+        //         var i = Math.floor(idx/CHAR_PER_LINE);
+        //         var j = idx%CHAR_PER_LINE;
+        //         console.log(text.length, i, j);
+        //         ctx.fillStyle = 'white';
+        //         var l = (i === lines-1) ? charsInLastLine : CHAR_PER_LINE; //居中
+        //         var endX = 0.5*(clientWidth-l*fontSize) + (j+1) * fontSize;
+        //         var endY = 0.5*(clientHeight-lines*fontSize) + i * fontSize;
+        //         ctx.fillRect( endX, endY, fontSize/2, fontSize);
+        //     }
+
+        //     requestAnimationFrame(drawTextWithCursor);
+        // }
+        // drawTextWithCursor();
+    }
+
+    function flashText(text, callback) {
+        if (textStatus === IDLE) {
+            setTextStatus(FLASHING);
+        } else {
+            return ;
+        }
+
+        clearAndDrawText(text, textCtx);
+
+
+        $(textCanvas).removeClass("fade-in");
+        $(particleCanvas).removeClass('invisible');
+        console.log("[add-flash-text] finished. original-class: ", $(textCanvas).attr('class'));
+        // $(textCanvas).addClass("flash-text");
+        setTimeout(function () {
+            if (textStatus === FLASHING) {
+                cancelFlashingText();
+                if (callback) {
+                    callback();
+                }
+            }
+        }, flashDuration*500);
+    }
+
+    function cancelFlashingText() {
+        $(textCanvas).removeClass('flash-text');
+        console.log("[cancel-flash-text] finished.");
+    }
+
+    var texts = ["复杂语言", "八卦能力", "虚构故事", "认知与思考", "交流与想象", "描述与重塑", "讲述历史", "记录当下", "描绘未来", "认知革命"];
+    var tmpNum = 0;
+    function getNextText() {
+        var text;
+        currentText = texts[tmpNum];
+        tmpNum ++;
+        if (tmpNum === texts.length){
+            tmpNum = 0;
+        }
+        // do {
+        //     text = texts[Math.floor(tmpNum * texts.length)];
+        //     tmpNum = tmpNum + 1;
+        // } while (text === currentText);
+        return currentText;
+    }
+
+    function fadeoutParticles() {
+        console.log('[fade-out-particles] start.');
+        $(particleCanvas).removeClass('invisible').removeClass('fade-in').addClass('fade-out');
+        setTimeout(function() {
+            clearCtx(particleCtx);
+            setTimeout(function() {
+                console.log('[fade-out-particles-finished] class: ', $(particleCanvas).attr('class'));
+                $(particleCanvas).removeClass('fade-out').addClass('invisible');
+            });
+        }, 800);
+    }
+
+    function idle() {
+        if (textStatus === IDLE) {
+            clearCtx(particleCtx);
+            flashText(currentText, flashCallback);
+        }
+    }
+
+    function flashCallback() {
+        startToExplode(currentText, explodeCallback);
+    }
+
+    function explodeCallback(particles) {
+        var nextText = getNextText();
+        startToShrink(nextText, particles, shrinkCallback);
+    }
+
+    function shrinkCallback() {
+        clearCtx(particleCtx);
+        if (textStatus === SHRINKING) {
+            setTextStatus(IDLE);
+            setTimeout(function() {
+                if (textStatus === IDLE) {
+                    idle();
+                }
+            }, shrinkToIdleDuration*1000);
+        }
+    }
+
+    function setCurrentText(text) {
+        currentText = text;
+    }
+
+
+    var waitStable = _.debounce(function() {
+        if (textStatus === RECOGNIZING) {
+            setTextStatus(STABLE);
+            waitIdle();
+        }
+    }, stableDuration*1000);
+
+    var waitIdle = _.debounce(function() {
+        if (textStatus === STABLE) {
+            setTextStatus(IDLE);
+            clearAndDrawText(currentText, textCtx);
+            idle();
+        }
+    }, stableToIdleDuration*1000);
+
+    function enterText(text, greyIdx) {
+        if (textStatus === IDLE) {
+            explodeAndFadeout(currentText);
+        } else if (textStatus === FLASHING) {
+            cancelFlashingText();
+            explodeAndFadeout(currentText);
+        } else if (textStatus === SHRINKING) {
+            fadeoutParticles();
+        } else if (textStatus === EXPLODING) {
+            fadeoutParticles();
+        } else if (textStatus === STABLE) {
+            explodeAndFadeout(currentText);
+        }
+
+        setTextStatus(RECOGNIZING);
+        setCurrentText(text);
+        flashTextWithCursor(text, textCtx, greyIdx);
+
+        waitStable();
+    }
+
+//    idle();
+//    setTimeout(function() {
+//        enterText('今天不回家了', 3);
+//    }, 2000);
+
+
+    var mockInputDuration = 2.1;
+    function mockInput(baseTime) {
+        var baseTime = baseTime || 0;
+        setTimeout(function() {
+            enterText('微微', 0);
+        }, baseTime);
+        setTimeout(function() {
+            enterText('喂喂你好', 0);
+        }, baseTime + 400);
+        setTimeout(function() {
+            enterText('喂喂你好一图', 4);
+        }, baseTime + 800);
+        setTimeout(function() {
+            enterText('你好依图欢迎你', 2);
+        }, baseTime + 1600);
+
+        setTimeout(function() {
+            enterText('你好依图欢迎你', 7);
+        }, baseTime + 2100);
+    }
+
+
+//    idle();
+    // idle();
+//    mockInput(1000+explodeDuration*1000 + 100);
+//    mockInput(1000+explodeDuration*1000 + shrinkDuration*1000 + 300);
+
+    //IDLE -> RECOG
+//    mockInput((flashDuration+explodeDuration+shrinkDuration+0.5*shrinkToIdleDuration) * 1000);
+
+    //FLASHING -> RECOG
+//    mockInput((flashDuration/2) * 1000);
+
+    //EXPLODING -> RECOG
+//    mockInput((flashDuration+explodeDuration*0.5) * 1000);
+
+    //SHRINKING -> RECOG
+//    mockInput((flashDuration+explodeDuration+shrinkDuration*0.5) * 1000);
+
+    //RECOG -> RECOG
+//    mockInput();
+//    mockInput((mockInputDuration+stableDuration*0.5)*1000);
+
+    //STABLE -> RECOG
+//    mockInput();
+//    mockInput((mockInputDuration+stableDuration+stableToIdleDuration*0.5)*1000);
+
+
+    function mockContinuousInput() {
+        mockInput();
+        var seconds = 10 + Math.random()*15;
+        setTimeout(function() {
+            mockContinuousInput();
+        }, seconds * 1000);
+    }
+
+
+    setParameters(10, 1);
+    idle();
+    // mockContinuousInput();
+
+
+    function setParameters(charPerLine, maxLines) {
+        CHAR_PER_LINE = charPerLine;
+        MAX_LINES = maxLines;
+    }
+
+
+    function setDefaultTexts(textArrays) {
+        texts = textArrays;
+    }
+
+
+    var receiveText = (function() {
+        var textLastTime = "";
+        var greyIdxLastTime = 0;
+
+        return function(text, greyIdx) {
+            if (text !== textLastTime || greyIdx !== greyIdxLastTime) {
+                enterText(text, greyIdx);
+            }
+        }
+    })();
+
+
+</script>
+</html>
