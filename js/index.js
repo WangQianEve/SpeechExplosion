@@ -80,6 +80,30 @@ var RENDERER = {
     },
 };
 
+var SHAPE_RENDERER = {
+    init: function () {
+        this.canvas = RENDERER.initCanvasById("shapeCanvas");
+        this.ctx = this.canvas.getContext("2d");
+        this.x = U.center.X;
+        this.y = U.center.Y;
+        this.r = 50;
+        this.alpha = 1;
+    },
+
+    update: function () {
+        console.log('update shape');
+        var img = new Image();
+        img.src = 'images/center_test.png';
+        this.ctx.drawImage(img, U.center.X, U.center.Y + 200, 100,100);
+        let ctx = this.ctx;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r , 0 , 2*Math.PI , true);
+        ctx.fillStyle = "rgba(255,255,255,"+this.alpha+")";
+        ctx.fill();
+        ctx.restore();
+    }
+};
+
 var PARTICLE_RENDERER = {
     MAX_NUM : 50,
     SHRINK_NUM : 1000,
@@ -116,7 +140,7 @@ var PARTICLE_RENDERER = {
     },
 
     explode: function () {
-        console.log("particle exploding");
+        // console.log("particle exploding");
         this.getExplodeParticlesFromPixels(TEXT_RENDERER.pixels);
         _.each(this.particles, function (particle) {
             particle.explode();
@@ -130,7 +154,7 @@ var PARTICLE_RENDERER = {
     },
 
     shrink: function (hwidth, hheight) {
-        console.log('start shrinking',this.shrinkParticles.length);
+        // console.log('start shrinking',this.shrinkParticles.length);
         let w_margin = U.WIDTH;
         let h_margin = U.HEIGHT;
         // _.each(this.particles, function (particle) {
@@ -253,7 +277,7 @@ var TEXT_RENDERER = {
             if (currentTexts.length - 1 === this.numOfLines) { // add one line
                 if ( this.texts.length > 0 ) { // update one
                     this.texts[this.texts.length - 1].text = currentTexts[currentTexts.length - 2];
-                    console.log('update 1',this.texts[this.texts.length - 1].text);
+                    // console.log('update 1',this.texts[this.texts.length - 1].text);
                 }
             }
             let time = 0;
@@ -317,7 +341,7 @@ var TEXT_RENDERER = {
 }
 
 function Textline(text, delay) {
-    console.log('new Textline', text, delay);
+    // console.log('new Textline', text, delay);
     this.x = U.center.X;
     this.y = U.center.Y;
     this.alpha = 0;
@@ -551,8 +575,10 @@ function init() {
     RENDERER.init();
     PARTICLE_RENDERER.init();
     TEXT_RENDERER.init();
+    SHAPE_RENDERER.init();
     setInterval(function () {PARTICLE_RENDERER.updateParticles();TEXT_RENDERER.updateTexts();}, RENDERER.FRAME_DUR);
     setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
+    setInterval(function () {SHAPE_RENDERER.update();}, 5000);
     test();
 }
 
@@ -596,7 +622,7 @@ function mockContinuousInput() {
 }
 
 function enterText(text, greyIdx) {
-    console.log("out enterText",text);
+    // console.log("out enterText",text);
     TEXT_RENDERER.setText(text);
     waitStable();
     waitEnd();
