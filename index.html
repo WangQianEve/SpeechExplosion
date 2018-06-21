@@ -16,7 +16,7 @@
             /*font-size: 60px;*/
             /*color: white;*/
             /*background-repeat: no-repeat;*/
-            background-color: black;
+            background-color: #C5C0B4;
             /*position: relative;*/
             /*overflow: hidden;*/
         }
@@ -24,6 +24,12 @@
             width: 100%;
             position: absolute;
         }
+        #img {
+            /*z-index:-1;*/
+            position: absolute;
+            width: 100%;
+            height: 100%;
+          }
     </style>
     <script type="text/javascript" src="js/underscore-min.js"></script>
     <script type="text/javascript" src="js/cubicBezier.js"></script>
@@ -36,8 +42,8 @@
 </canvas>
 <canvas id="textCanvas">
 </canvas>
-<div style="position:absolute;">
-    <img src="images/gradient2.png" width="100%"/>
+<div>
+    <img src="images/gradient2.png" id="img"/>
 </div>
 <script type="text/javascript" src="js/index.js"></script>
 

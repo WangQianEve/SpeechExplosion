@@ -20,7 +20,7 @@ var U = {
     END_DUR : 5000, // MS
     init: function () {
         this.center.X = this.WIDTH/2;
-        this.center.Y = this.HEIGHT/2;
+        this.center.Y = this.HEIGHT/3;
         console.log("U ",this.WIDTH, this.HEIGHT);
     }
 };
@@ -85,22 +85,48 @@ var SHAPE_RENDERER = {
         this.canvas = RENDERER.initCanvasById("shapeCanvas");
         this.ctx = this.canvas.getContext("2d");
         this.x = U.center.X;
-        this.y = U.center.Y;
-        this.r = 50;
+        this.y = U.HEIGHT*0.8;
+        this.N = 90;
+        this.r_min = 60;
+        this.r_max = 150;
+        this.r_step = (this.r_max - this.r_min) / this.N;
+        this.a_min = 0;
+        this.a_step = (1-this.a_min) / this.N;
+
+        this.MAX = 4;
+        this.rings = Array.apply(null, Array(this.MAX)).map(function (item, i) {
+            return {r:0, a:0};
+        });
         this.alpha = 1;
+        this.center = new Image();
+        this.center.src = 'images/center.png';
+        this.ring = new Image();
+        this.ring.src = 'images/ring.png';
+        this.current = 0;
     },
 
     update: function () {
-        console.log('update shape');
-        var img = new Image();
-        img.src = 'images/center_test.png';
-        this.ctx.drawImage(img, U.center.X, U.center.Y + 200, 100,100);
         let ctx = this.ctx;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.r , 0 , 2*Math.PI , true);
-        ctx.fillStyle = "rgba(255,255,255,"+this.alpha+")";
-        ctx.fill();
+        RENDERER.clearCtx(ctx);
+        ctx.save();
+        for(let i = 0; i < this.MAX; i++) {
+            if(this.rings[i]['r'] <= this.r_min) {continue;}
+            this.rings[i]['r'] -= this.r_step;
+            this.rings[i]['a'] += this.a_step;
+            ctx.globalAlpha = this.rings[i]['a'];
+            let r = this.rings[i]['r'];
+            this.ctx.drawImage(this.ring, this.x - r/2, this.y - r/2, r, r);
+        }
+        this.ctx.drawImage(this.center, this.x - this.r_min/2, this.y - this.r_min/2, this.r_min, this.r_min);
         ctx.restore();
+    },
+    
+    genWave: function () {
+        // console.log("ds");
+        this.rings[this.current]['r'] = this.r_max;
+        this.rings[this.current]['a'] = this.a_min;
+        this.current += 1;
+        if(this.current >= this.MAX) this.current = 0;
     }
 };
 
@@ -190,7 +216,7 @@ var TEXT_RENDERER = {
 
     MOVE_TIME : 100,  // FRAME
 
-    FONT_SIZE : 100,
+    FONT_SIZE : 50,
     FONT_SIZE_STEP : 0.15,
 
     shrink_end : 0,
@@ -578,7 +604,8 @@ function init() {
     SHAPE_RENDERER.init();
     setInterval(function () {PARTICLE_RENDERER.updateParticles();TEXT_RENDERER.updateTexts();}, RENDERER.FRAME_DUR);
     setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
-    setInterval(function () {SHAPE_RENDERER.update();}, 5000);
+    setInterval(function () {SHAPE_RENDERER.update();}, 33);
+    setInterval(function () {SHAPE_RENDERER.genWave();}, 1000);
     test();
 }
 
