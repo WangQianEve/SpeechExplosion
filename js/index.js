@@ -45,6 +45,8 @@ var RENDERER = {
     SPEEDUP_TIME : 10, // FRAME
     SLOWDOWN_TIME : 40, // FRAME
     EXPLODE_MAX_SPEED : 200, // FRAME
+    MIC_TIME_MIN : 40,
+    MIC_TIME_RANGE : 30,
 
     init :function () {
         this.EXPLODE_TIME = this.SPEEDUP_TIME + this.SLOWDOWN_TIME;
@@ -66,6 +68,16 @@ var RENDERER = {
                 return this.SHRINK_MAX_SPEED1 + this.SHRINK_MAX_SPEED2;
             }
         };
+
+        this.toMicX = function (t) {
+            if (t >= this.MIC_TIME_MIN) return 1;
+            return cubicBezierGenerator(0, .6, .6, .9)(t/this.MIC_TIME_MIN);
+        };
+
+        this.toMicY = function (t) {
+            if (t >= this.MIC_TIME_MIN) return 1;
+            return cubicBezierGenerator(.5, .5, .5, .5)(t/this.MIC_TIME_MIN);
+        };
     },
 
     initCanvasById: function (id) {
@@ -81,64 +93,130 @@ var RENDERER = {
 };
 
 var SHAPE_RENDERER = {
+    HIDE : 0,
+    ENTER : 1,
+    RUN : 2,
+    LEAVE : 3,
+    ENTER_FRAME : 30,
     init: function () {
         this.canvas = RENDERER.initCanvasById("shapeCanvas");
         this.ctx = this.canvas.getContext("2d");
         this.x = U.center.X;
         this.y = U.HEIGHT*0.8;
-        this.N = 90;
+        this.N = 90; // frames in a loop
         this.r_min = 60;
-        this.r_max = 150;
+        this.r_max = 180;
         this.r_step = (this.r_max - this.r_min) / this.N;
         this.a_min = 0;
-        this.a_step = (1-this.a_min) / this.N;
+        this.a_max = 0.3;
+        this.a_step = (this.a_max-this.a_min) / this.N;
 
         this.MAX = 4;
         this.rings = Array.apply(null, Array(this.MAX)).map(function (item, i) {
             return {r:0, a:0};
         });
-        this.alpha = 1;
         this.center = new Image();
         this.center.src = 'images/center.png';
         this.ring = new Image();
         this.ring.src = 'images/ring.png';
+        // this.lights = Array.apply(null, Array(this.ENTER_FRAME)).map(function (item, i) {
+        //     let img = new Image();
+        //     img.src = 'images/reveal/d'+(i+1)+'.png';
+        //     return img;
+        // });
         this.current = 0;
+        this.state = this.HIDE;
+        this.leaving = false;
+        this.center_a = 1;
     },
 
     update: function () {
         let ctx = this.ctx;
         RENDERER.clearCtx(ctx);
         ctx.save();
-        for(let i = 0; i < this.MAX; i++) {
-            if(this.rings[i]['r'] <= this.r_min) {continue;}
-            this.rings[i]['r'] -= this.r_step;
-            this.rings[i]['a'] += this.a_step;
-            ctx.globalAlpha = this.rings[i]['a'];
-            let r = this.rings[i]['r'];
-            this.ctx.drawImage(this.ring, this.x - r/2, this.y - r/2, r, r);
+        if (this.state === this.RUN) {
+            for(let i = 0; i < this.MAX; i++) {
+                if(this.rings[i]['r'] <= this.r_min) {continue;}
+                this.rings[i]['r'] -= this.r_step;
+                if (this.leaving) {
+                    let a = this.rings[i]['a'] - 0.02; // 20 frames from 0.3 to 0
+                    this.rings[i]['a'] = Math.max(0, a);
+                } else this.rings[i]['a'] += this.a_step;
+                ctx.globalAlpha = this.rings[i]['a'];
+                let r = this.rings[i]['r'];
+                this.ctx.drawImage(this.ring, this.x - r/2, this.y - r/2, r, r);
+            }
+            if (this.leaving) this.center_a -= 0.05; // 300ms
+            ctx.globalAlpha = this.center_a;
+            this.ctx.drawImage(this.center, this.x - this.r_min/2, this.y - this.r_min/2, this.r_min, this.r_min);
         }
-        this.ctx.drawImage(this.center, this.x - this.r_min/2, this.y - this.r_min/2, this.r_min, this.r_min);
+        if (this.state === this.ENTER) {
+            // ctx.globalAlpha = 0.5;
+            ctx.globalAlpha = 1;
+            ctx.drawImage(this.center, this.x - this.r_min/2, this.y - this.r_min/2, this.r_min, this.r_min);
+            ctx.restore();
+            this.drawCircle(this.enter_frame);
+            this.enter_frame += 1;
+            if(this.enter_frame >= this.ENTER_FRAME){
+                this.state = this.RUN; 
+            }
+        }
         ctx.restore();
     },
-    
+
+    drawCircle: function (t) {
+        let ctx = this.ctx;
+        ctx.strokeStyle = '#C5C0B4'; // C5C0B4
+        t = Math.max(t, 2);
+        ctx.lineWidth = this.r_min * 2.4 - t * 4;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y - this.r_min/2, this.r_min * 1.2 , 0 , 2*Math.PI , true); // t * this.r_min / this.ENTER_FRAME
+        ctx.stroke();
+        ctx.closePath();
+    },
+
     genWave: function () {
         // console.log("ds");
+        if(this.state !== this.RUN) return;
         this.rings[this.current]['r'] = this.r_max;
         this.rings[this.current]['a'] = this.a_min;
         this.current += 1;
         if(this.current >= this.MAX) this.current = 0;
+    },
+
+    enter : function () {
+        _.each(this.rings, function (ring) {
+            ring['r'] = 0;
+        });
+        PARTICLE_RENDERER.activate();
+        setTimeout(function () {
+            SHAPE_RENDERER.state = SHAPE_RENDERER.ENTER;
+            SHAPE_RENDERER.enter_frame = 0;
+        },RENDERER.MIC_TIME_MIN * RENDERER.FRAME_DUR);
+        this.leaving = false;
+        this.center_a = 1;
+        // console.log('enter', this.state);
+    },
+    
+    leave : function () {
+        this.leaving = true;
+        setTimeout(function () {SHAPE_RENDERER.state = SHAPE_RENDERER.LEAVE;}, 500);
     }
 };
 
 var PARTICLE_RENDERER = {
     MAX_NUM : 50,
     SHRINK_NUM : 1000,
+    MIC_NUM : 30,
 
     init: function() {
         this.canvas = RENDERER.initCanvasById("particleCanvas");
         this.ctx = this.canvas.getContext("2d");
         this.particles = Array.apply(null, Array(this.MAX_NUM)).map(function (item, i) {
             return new Particle(i, true, 0, 0);
+        });
+        this.micParticles = Array.apply(null, Array(this.MIC_NUM)).map(function (item, i) {
+            return new Particle(-2, true, 0, 0);
         });
         this.shrinkParticles = Array.apply(null, Array(this.SHRINK_NUM)).map(function (item, i) {
             return new Particle(i, true, 0, 0);
@@ -148,14 +226,19 @@ var PARTICLE_RENDERER = {
     updateParticles: function () {
         if (!this.ctx) return;
         RENDERER.clearCtx(this.ctx);
-        _.each(this.particles, function (particle) {
-            particle.update(PARTICLE_RENDERER.ctx);
-        });
+        // _.each(this.particles, function (particle) {
+        //     particle.update(PARTICLE_RENDERER.ctx);
+        // });
         _.each(this.explodeParticles, function (particle) {
             particle.update(PARTICLE_RENDERER.ctx);
         });
         _.each(this.shrinkParticles, function (particle) {
             particle.update(PARTICLE_RENDERER.ctx);
+        });
+        // console.log('mic particles');
+        _.each(this.micParticles, function (particle) {
+            particle.update(PARTICLE_RENDERER.ctx);
+            // console.log(particle.state);
         });
     },
 
@@ -168,13 +251,16 @@ var PARTICLE_RENDERER = {
     explode: function () {
         // console.log("particle exploding");
         this.getExplodeParticlesFromPixels(TEXT_RENDERER.pixels);
-        _.each(this.particles, function (particle) {
-            particle.explode();
-        });
+        // _.each(this.particles, function (particle) {
+        //     particle.explode();
+        // });
         _.each(this.shrinkParticles, function (particle) {
             particle.fadeout();
         });
         _.each(this.explodeParticles, function (particle) {
+            particle.explode();
+        });
+        _.each(this.micParticles, function (particle) {
             particle.explode();
         });
     },
@@ -198,6 +284,14 @@ var PARTICLE_RENDERER = {
                             U.center.Y - hheight + 15 + Math.random() * 2 * hheight);
         });
     },
+
+    activate: function () {
+        _.each(this.micParticles, function (particle) {
+            setTimeout(function () {
+                particle.activate();
+            },Math.random() * RENDERER.MIC_TIME_RANGE * RENDERER.FRAME_DUR);
+        });
+    }
 };
 
 var TEXT_RENDERER = {
@@ -469,6 +563,9 @@ Textline.prototype = {
 function Particle(i, bg, x, y) {
     this.id = i;
     this.reborn();
+    if (i === -2) {
+        return;
+    }
     if (bg) this.state = this.IDLE;
     else {
         this.x = x;
@@ -489,6 +586,7 @@ Particle.prototype = {
     STABLE : 3,
     SHRINK : 4,
     SHRINK_FADEOUT : 5,
+    MIC : 6,
     FLOAT_DIR_STEP: 0.07,
     V : [0.2, 1.0],
     R : [3, 4],
@@ -513,6 +611,20 @@ Particle.prototype = {
         ctx.restore();
     },
 
+    reflect : function () {
+        if (this.x > U.WIDTH) {
+            this.x = 0;
+        } else if (this.x < 0) {
+            this.x = U.WIDTH;
+        }
+
+        if (this.y > U.HEIGHT) {
+            this.y = 0;
+        } else if (this.y < 0) {
+            this.y = U.HEIGHT;
+        }
+    },
+
     update : function (ctx) {
         if (this.state === this.IDLE) {
             if (this.id === -1) return;
@@ -524,7 +636,7 @@ Particle.prototype = {
             else this.alpha += this.a/8;
         } else if (this.state === this.FLOAT) {
             // only update direction
-            if (this.id >= 0) {
+            if (this.id >= 0 || this.id === -2) {
                 this.direction += (Math.random() - 0.5) * this.FLOAT_DIR_STEP;
                 this.direction = this.direction % (Math.PI * 2);
             } else {
@@ -534,7 +646,7 @@ Particle.prototype = {
             }
             this.x += this.velocity * Math.cos(this.direction);
             this.y += this.velocity * Math.sin(this.direction);
-            if (this.id >= 0) {
+            if (this.id >= 0 || this.id === -2) {
                 this.x = this.x % U.WIDTH;
                 this.y = this.y % U.HEIGHT;
             }
@@ -548,7 +660,11 @@ Particle.prototype = {
             } else {
                 this.state = this.FLOAT;
                 if (this.x > U.WIDTH || this.y > U.HEIGHT || this.x < 0 || this.y < 0) {
-                    this.state = this.IDLE;
+                    if (this.id === -2) {
+                        this.reflect();
+                    } else {
+                        this.state = this.IDLE;
+                    }
                 }
             }
         } else if (this.state === this.SHRINK) {
@@ -565,6 +681,18 @@ Particle.prototype = {
             }
         } else if (this.state === this.SHRINK_FADEOUT) {
             if (this.alpha > 0) this.alpha -= 0.15;
+        } else if (this.state === this.MIC) {
+            this.mic_frame += 1;
+            if (this.r > 3) this.r -= 0.1;
+
+            if (this.mic_frame > this.mic_time) {
+                this.reborn();
+            }
+
+            if (this.mic_frame <= this.mic_time) {
+                this.x = this.toMicStart.x + this.toMic.x * RENDERER.toMicX(this.mic_frame);
+                this.y = this.toMicStart.y + this.toMic.y * RENDERER.toMicY(this.mic_frame);
+            }
         }
         if (this.state !== this.IDLE) {
             this.draw(ctx);
@@ -572,7 +700,7 @@ Particle.prototype = {
     },
     
     explode : function () {
-        if (this.state === this.IDLE) return;
+        if (this.state === this.IDLE || this.state === this.MIC) return;
         this.state = this.EXPLODE;
         if (this.id > 0) this.direction = Math.atan2(this.y - U.HEIGHT/2, this.x - U.WIDTH/2);
         this.explode_frame = 0;
@@ -589,6 +717,16 @@ Particle.prototype = {
     
     fadeout: function () {
         this.state = this.SHRINK_FADEOUT;
+    },
+    
+    activate : function () {
+        this.state = this.MIC;
+        this.mic_time = RENDERER.MIC_TIME_MIN; // + Math.floor(Math.random() * RENDERER.MIC_TIME_RANGE);
+        this.mic_frame = 0;
+        this.toMicStart = {x:this.x,
+                           y:this.y};
+        this.toMic = {x: SHAPE_RENDERER.x - this.x,
+                      y: SHAPE_RENDERER.y - SHAPE_RENDERER.r_min/2 + 4 - this.y};
     }
 };
 
@@ -610,26 +748,30 @@ function init() {
 }
 
 function test() {
-    // mockContinuousInput();
-    mockInput(300);
-
+    mockContinuousInput();
+    // mockInput(300);
 }
 
 window.onload = init;
 
 function mockInput(baseTime) {
-    var baseTime = baseTime || 0;
-    setTimeout(function() {
-        enterText('我要数数1，', 4);
-    }, baseTime);
+    SHAPE_RENDERER.enter();
+    setTimeout(function () {
+        SHAPE_RENDERER.leave();
+    }, 4000);
 
-    setTimeout(function() {
-        enterText('我要给你数数1，我要数数2，', 4);
-    }, baseTime);
-
-    setTimeout(function() {
-        enterText('我要给你数数1，我要数数2，我要数数3，我要数数4', 4);
-    }, baseTime + 200);
+    // var baseTime = baseTime || 0;
+    // setTimeout(function() {
+    //     enterText('我要数数1，', 4);
+    // }, baseTime);
+    //
+    // setTimeout(function() {
+    //     enterText('我要给你数数1，我要数数2，', 4);
+    // }, baseTime);
+    //
+    // setTimeout(function() {
+    //     enterText('我要给你数数1，我要数数2，我要数数3，我要数数4', 4);
+    // }, baseTime + 200);
 
     // setTimeout(function() {
     //     enterText('马桑德'+TEXT_RENDERER.SEPARATOR+'不可以这样'+TEXT_RENDERER.SEPARATOR+'你好依图欢迎你你好我欢迎你啦啦啦', 4);
@@ -642,7 +784,7 @@ function mockInput(baseTime) {
 
 function mockContinuousInput() {
     mockInput();
-    var seconds = 10;
+    var seconds = 5;
     setTimeout(function() {
         mockContinuousInput();
     }, seconds * 1000);
