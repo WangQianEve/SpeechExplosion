@@ -326,8 +326,7 @@ var TEXT_RENDERER = {
             return this.MAX_STEP_Y * cubicBezierGenerator(1,0,.7,0)(1-t/this.MOVE_TIME);
         };
 
-        this.default = true;
-        // this.enterText();
+        this.default = false;
     },
 
     removeFirst : function() {
@@ -734,15 +733,22 @@ function print() {
     console.log(Date.now());
 }
 
+function animate() {
+    PARTICLE_RENDERER.updateParticles();
+    TEXT_RENDERER.updateTexts();
+    SHAPE_RENDERER.update();
+    requestAnimationFrame(animate);
+}
+
 function init() {
     U.init();
     RENDERER.init();
     PARTICLE_RENDERER.init();
     TEXT_RENDERER.init();
     SHAPE_RENDERER.init();
-    setInterval(function () {PARTICLE_RENDERER.updateParticles();TEXT_RENDERER.updateTexts();}, RENDERER.FRAME_DUR);
+    animate();
+    waitEnd();
     setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
-    setInterval(function () {SHAPE_RENDERER.update();}, 33);
     setInterval(function () {SHAPE_RENDERER.genWave();}, 1000);
     test();
 }
