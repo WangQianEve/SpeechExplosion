@@ -61,10 +61,8 @@ var RENDERER = {
             if (t < this.SHRINK_TIME1) {
                 return this.SHRINK_MAX_SPEED1 * cubicBezierGenerator(0, .5, .5, 1)(t/this.SHRINK_TIME1);
             } else if (t - this.SHRINK_TIME1 < this.SHRINK_TIME2) {
-                // return 0;
                 return this.SHRINK_MAX_SPEED1 + this.SHRINK_MAX_SPEED2 * cubicBezierGenerator(.5, 0, 1, .5)((t - this.SHRINK_TIME1)/this.SHRINK_TIME2);
             } else {
-                // return 0;
                 return this.SHRINK_MAX_SPEED1 + this.SHRINK_MAX_SPEED2;
             }
         };
@@ -75,8 +73,10 @@ var RENDERER = {
         };
 
         this.toMicY = function (t) {
-            if (t >= this.MIC_TIME_MIN) return 1;
-            return cubicBezierGenerator(.5, .5, .5, .5)(t/this.MIC_TIME_MIN);
+            let ret = 0
+            if (t >= this.MIC_TIME_MIN) ret = 1;
+            else ret = cubicBezierGenerator(.15, .6, .8, .5)(t/this.MIC_TIME_MIN);
+            return ret;
         };
     },
 
@@ -96,8 +96,9 @@ var SHAPE_RENDERER = {
     HIDE : 0,
     ENTER : 1,
     RUN : 2,
-    LEAVE : 3,
     ENTER_FRAME : 30,
+    CENTER_POINT : 4,
+
     init: function () {
         this.canvas = RENDERER.initCanvasById("shapeCanvas");
         this.ctx = this.canvas.getContext("2d");
@@ -119,18 +120,25 @@ var SHAPE_RENDERER = {
         this.center.src = 'images/center.png';
         this.ring = new Image();
         this.ring.src = 'images/ring.png';
-        // this.lights = Array.apply(null, Array(this.ENTER_FRAME)).map(function (item, i) {
-        //     let img = new Image();
-        //     img.src = 'images/reveal/d'+(i+1)+'.png';
-        //     return img;
-        // });
         this.current = 0;
         this.state = this.HIDE;
         this.leaving = false;
         this.center_a = 1;
+
+        this.revealCurve = function (t) {
+            if (t >= this.ENTER_FRAME) return 1;
+            return cubicBezierGenerator(.6, .1, .9, .3)(t/this.ENTER_FRAME);
+        };
+
     },
 
     update: function () {
+        if (this.leaving) {
+            this.center_a -= 0.05;
+            if (this.center_a <= 0) {
+                this.endLeave();
+            }
+        }
         let ctx = this.ctx;
         RENDERER.clearCtx(ctx);
         ctx.save();
@@ -146,7 +154,6 @@ var SHAPE_RENDERER = {
                 let r = this.rings[i]['r'];
                 this.ctx.drawImage(this.ring, this.x - r/2, this.y - r/2, r, r);
             }
-            if (this.leaving) this.center_a -= 0.05; // 300ms
             ctx.globalAlpha = this.center_a;
             this.ctx.drawImage(this.center, this.x - this.r_min/2, this.y - this.r_min/2, this.r_min, this.r_min);
         }
@@ -164,15 +171,25 @@ var SHAPE_RENDERER = {
         ctx.restore();
     },
 
-    drawCircle: function (t) {
+    drawCircle: function (frame) {
         let ctx = this.ctx;
+        let r1 = this.ENTER_FRAME * 2 * this.revealCurve(frame);
         ctx.strokeStyle = '#C5C0B4'; // C5C0B4
-        t = Math.max(t, 2);
-        ctx.lineWidth = this.r_min * 2.4 - t * 4;
+        ctx.lineWidth = this.r_min * 2.4 - r1 * 2;
         ctx.beginPath();
         ctx.arc(this.x, this.y - this.r_min/2, this.r_min * 1.2 , 0 , 2*Math.PI , true); // t * this.r_min / this.ENTER_FRAME
         ctx.stroke();
         ctx.closePath();
+        // draw small ones
+        let a = r1*r1/this.r_min;
+        let yy = this.y - this.r_min/2 + a + 3;
+        let b = Math.sqrt(r1*r1 - a*a) - 3;
+        ctx.beginPath();
+        ctx.arc(this.x - b, yy, this.CENTER_POINT , 0 , 2*Math.PI , true);
+        ctx.arc(this.x + b, yy, this.CENTER_POINT , 0 , 2*Math.PI , true);
+        ctx.fillStyle = "rgba(255,255,255,"+(0.5-a/this.r_min)+")";
+        ctx.fill();
+        ctx.restore();
     },
 
     genWave: function () {
@@ -190,89 +207,98 @@ var SHAPE_RENDERER = {
         });
         PARTICLE_RENDERER.activate();
         setTimeout(function () {
+            PARTICLE_RENDERER.actFinish();
             SHAPE_RENDERER.state = SHAPE_RENDERER.ENTER;
             SHAPE_RENDERER.enter_frame = 0;
-        },RENDERER.MIC_TIME_MIN * RENDERER.FRAME_DUR);
-        this.leaving = false;
+        }, (RENDERER.MIC_TIME_MIN + RENDERER.MIC_TIME_RANGE) * RENDERER.FRAME_DUR);
         this.center_a = 1;
         // console.log('enter', this.state);
     },
     
     leave : function () {
         this.leaving = true;
-        setTimeout(function () {SHAPE_RENDERER.state = SHAPE_RENDERER.LEAVE;}, 500);
+    },
+
+    endLeave : function () {
+        this.state = this.HIDE;
+        this.center_a = 0;
+        this.leaving = false;
     }
 };
 
 var PARTICLE_RENDERER = {
-    MAX_NUM : 50,
-    SHRINK_NUM : 1000,
-    MIC_NUM : 30,
+    IDLE : -1,
+    APPEAR : 0,
+    FLOAT : 1,
+    EXPLODE : 2,
+    STABLE : 3,
+    SHRINK : 4,
+    SHRINK_FADEOUT : 5,
+    MIC : 6,
+    SHRINK_MOVE : 7,
+    FLOAT_DIR_STEP: 0.03,
+    V : [0.2, 0.6],
+    R : [3, 4],
+    A : [0.2, 0.8],
+    CHANGE_DIR_MAX_FRAME : 200,
 
     init: function() {
         this.canvas = RENDERER.initCanvasById("particleCanvas");
         this.ctx = this.canvas.getContext("2d");
-        this.particles = Array.apply(null, Array(this.MAX_NUM)).map(function (item, i) {
-            return new Particle(i, true, 0, 0);
+        this.particles = Array.apply(null, Array(20)).map(function (item, i) {
+            return new Particle('p', 0, 0);
         });
-        this.micParticles = Array.apply(null, Array(this.MIC_NUM)).map(function (item, i) {
-            return new Particle(-2, true, 0, 0);
+        this.micParticles = Array.apply(null, Array(10)).map(function (item, i) {
+            return new Particle('m', 0, 0);
         });
-        this.shrinkParticles = Array.apply(null, Array(this.SHRINK_NUM)).map(function (item, i) {
-            return new Particle(i, true, 0, 0);
-        })
+        this.shrinkParticles = Array.apply(null, Array(300)).map(function (item, i) {
+            return new Particle('s', 0, 0);
+        });
     },
 
     updateParticles: function () {
         if (!this.ctx) return;
         RENDERER.clearCtx(this.ctx);
-        // _.each(this.particles, function (particle) {
-        //     particle.update(PARTICLE_RENDERER.ctx);
-        // });
-        _.each(this.explodeParticles, function (particle) {
+        _.each(this.particles, function (particle) {
+            particle.update(PARTICLE_RENDERER.ctx);
+        });
+        _.each(this.micParticles, function (particle) {
             particle.update(PARTICLE_RENDERER.ctx);
         });
         _.each(this.shrinkParticles, function (particle) {
             particle.update(PARTICLE_RENDERER.ctx);
         });
-        // console.log('mic particles');
-        _.each(this.micParticles, function (particle) {
+        _.each(this.explodeParticles, function (particle) {
             particle.update(PARTICLE_RENDERER.ctx);
-            // console.log(particle.state);
         });
     },
 
     getExplodeParticlesFromPixels : function (pixels) {
         this.explodeParticles = _.map(pixels, function (pixel, idx) {
-            return new Particle(-1, false, pixel.x, pixel.y);
+            return new Particle('e', pixel.x, pixel.y);
         });
     },
 
     explode: function () {
-        // console.log("particle exploding");
+        console.log("particle exploding");
         this.getExplodeParticlesFromPixels(TEXT_RENDERER.pixels);
-        // _.each(this.particles, function (particle) {
-        //     particle.explode();
-        // });
+        _.each(this.particles, function (particle) {
+            particle.explode();
+        });
+        _.each(this.micParticles, function (particle) {
+            particle.explode();
+        });
         _.each(this.shrinkParticles, function (particle) {
             particle.fadeout();
         });
         _.each(this.explodeParticles, function (particle) {
             particle.explode();
         });
-        _.each(this.micParticles, function (particle) {
-            particle.explode();
-        });
     },
 
     shrink: function (hwidth, hheight) {
-        // console.log('start shrinking',this.shrinkParticles.length);
         let w_margin = U.WIDTH;
         let h_margin = U.HEIGHT;
-        // _.each(this.particles, function (particle) {
-        //     particle.shrink(U.center.X - hwidth + Math.random() * 2 * hwidth,
-        //         U.center.Y - hheight + Math.random() * 2 * hheight);
-        // });
         _.each(this.shrinkParticles, function (particle) {
             let x_ = 1;
             let y_ = 1;
@@ -283,6 +309,12 @@ var PARTICLE_RENDERER = {
             particle.shrink(U.center.X - hwidth + Math.random() * 2 * hwidth,
                             U.center.Y - hheight + 15 + Math.random() * 2 * hheight);
         });
+        _.each(this.particles, function (particle) {
+            particle.shrink(U.center.X, U.center.Y);
+        });
+        _.each(this.micParticles, function (particle) {
+            particle.shrink(U.center.X, U.center.Y);
+        });
     },
 
     activate: function () {
@@ -290,6 +322,12 @@ var PARTICLE_RENDERER = {
             setTimeout(function () {
                 particle.activate();
             },Math.random() * RENDERER.MIC_TIME_RANGE * RENDERER.FRAME_DUR);
+        });
+    },
+
+    actFinish: function () {
+        _.each(this.micParticles, function (particle) {
+            particle.micFinished();
         });
     }
 };
@@ -559,47 +597,39 @@ Textline.prototype = {
     }
 };
 
-function Particle(i, bg, x, y) {
-    this.id = i;
+function Particle(t, x, y) {
+    this.type = t;
+    this.direction_dir = 1;
     this.reborn();
-    if (i === -2) {
-        return;
-    }
-    if (bg) this.state = this.IDLE;
-    else {
+    if (t === 'e') {
         this.x = x;
         this.y = y;
         this.alpha = this.a;
-        this.state = this.STABLE;
-        this.velocity += 0.8;
+        this.state = PARTICLE_RENDERER.STABLE;
+        this.velocity += 0.8; // 这样爆炸完之后可以尽快离开
         this.projection *= 2;
-        this.projection += 0.08;
+        this.projection += 0.08; // 尽量炸到外面
+    } else if (t === 'm') {
+        return;
+    } else {
+        this.state = PARTICLE_RENDERER.IDLE;
     }
 }
 
 Particle.prototype = {
-    IDLE : -1,
-    APPEAR : 0,
-    FLOAT : 1,
-    EXPLODE : 2,
-    STABLE : 3,
-    SHRINK : 4,
-    SHRINK_FADEOUT : 5,
-    MIC : 6,
-    FLOAT_DIR_STEP: 0.07,
-    V : [0.2, 1.0],
-    R : [3, 4],
-
     reborn: function () {
         this.x = Math.floor(Math.random() * U.WIDTH);
         this.y = Math.floor(Math.random() * U.HEIGHT);
-        this.r = Math.floor(this.R[0] + Math.random() * this.R[1]);
-        this.a = Math.random();
+        this.r = Math.floor(PARTICLE_RENDERER.R[0] + Math.random() * PARTICLE_RENDERER.R[1]);
+        this.a = PARTICLE_RENDERER.A[0] + Math.random() * PARTICLE_RENDERER.A[1];
         this.alpha = 0;
-        this.state = this.APPEAR;
+        this.state = PARTICLE_RENDERER.APPEAR;
         this.direction = Math.random() * 2 * Math.PI;
-        this.velocity = this.V[0] + Math.random() * this.V[1];
-        this.projection = 0.2 * Math.sin(Math.random() * Math.PI);
+        this.changeDirection = Math.random() * PARTICLE_RENDERER.CHANGE_DIR_MAX_FRAME;
+        this.velocity = PARTICLE_RENDERER.V[0] + Math.random() * PARTICLE_RENDERER.V[1];
+        if (this.type === 's') this.projection = 1;
+        else this.projection = 0.2 * Math.sin(Math.random() * Math.PI);
+        // this.fading = false;
     },
 
     draw : function (ctx) {
@@ -610,46 +640,47 @@ Particle.prototype = {
         ctx.restore();
     },
 
-    reflect : function () {
-        if (this.x > U.WIDTH) {
-            this.x = 0;
-        } else if (this.x < 0) {
-            this.x = U.WIDTH;
-        }
-
-        if (this.y > U.HEIGHT) {
-            this.y = 0;
-        } else if (this.y < 0) {
-            this.y = U.HEIGHT;
-        }
-    },
-
     update : function (ctx) {
-        if (this.state === this.IDLE) {
-            if (this.id === -1) return;
-            if (Math.random() > 0.98) {
-                this.reborn();
-            }
-        } else if (this.state === this.APPEAR) {
-            if (this.alpha >= this.a) this.state = this.FLOAT;
-            else this.alpha += this.a/8;
-        } else if (this.state === this.FLOAT) {
-            // only update direction
-            if (this.id >= 0 || this.id === -2) {
-                this.direction += (Math.random() - 0.5) * this.FLOAT_DIR_STEP;
-                this.direction = this.direction % (Math.PI * 2);
-            } else {
-                if (this.x > U.WIDTH || this.y > U.HEIGHT || this.x < 0 || this.y < 0) {
-                    this.state = this.IDLE;
+        if (this.state === PARTICLE_RENDERER.IDLE) {
+            if (this.type === 'p') {
+                if (Math.random() >= 0.995) {
+                    this.reborn();
+                }
+            } else if (this.type === 'm') {
+                if (Math.random() >= 0.99) {
+                    this.reborn();
                 }
             }
+        } else if (this.state === PARTICLE_RENDERER.FLOAT || this.state === PARTICLE_RENDERER.APPEAR) {
+            if (this.alpha >= this.a) this.state = PARTICLE_RENDERER.FLOAT;
+            else this.alpha += this.a/30;
+            this.changeDirection -= 1;
+            if (this.changeDirection <= 0) {
+                this.changeDirection = Math.random() * PARTICLE_RENDERER.CHANGE_DIR_MAX_FRAME;
+                this.direction_dir *= -1;
+            }
+            this.direction += Math.random() * PARTICLE_RENDERER.FLOAT_DIR_STEP * this.direction_dir;
+            this.direction = this.direction % (Math.PI * 2);
             this.x += this.velocity * Math.cos(this.direction);
             this.y += this.velocity * Math.sin(this.direction);
-            if (this.id >= 0 || this.id === -2) {
-                this.x = this.x % U.WIDTH;
-                this.y = this.y % U.HEIGHT;
+            if (this.type === 'e') { // if explode then die else never die
+                this.alpha -= 0.02;
+                if (this.alpha <= 0 || this.x > U.WIDTH || this.y > U.HEIGHT || this.x < 0 || this.y < 0) {
+                    this.state = PARTICLE_RENDERER.IDLE;
+                }
+            } else {
+                if (this.x >= U.WIDTH || this.y >= U.HEIGHT) {
+                    this.x = this.x % U.WIDTH;
+                    this.y = this.y % U.HEIGHT;
+                }
+                if (this.x < 0 || this.y < 0) {
+                    this.x += U.WIDTH;
+                    this.y += U.HEIGHT;
+                    this.x = this.x % U.WIDTH;
+                    this.y = this.y % U.HEIGHT;
+                }
             }
-        } else if (this.state === this.EXPLODE) {
+        } else if (this.state === PARTICLE_RENDERER.EXPLODE) {
             if (this.explode_frame < RENDERER.EXPLODE_TIME) {
                 let v = this.velocity;
                 this.explode_frame += 1;
@@ -657,61 +688,71 @@ Particle.prototype = {
                 this.x += v * Math.cos(this.direction);
                 this.y += v * Math.sin(this.direction);
             } else {
-                this.state = this.FLOAT;
                 if (this.x > U.WIDTH || this.y > U.HEIGHT || this.x < 0 || this.y < 0) {
-                    if (this.id === -2) {
-                        this.reflect();
-                    } else {
-                        this.state = this.IDLE;
-                    }
+                    this.state = PARTICLE_RENDERER.IDLE;
+                } else {
+                    this.state = PARTICLE_RENDERER.FLOAT;
                 }
             }
-        } else if (this.state === this.SHRINK) {
+        } else if (this.state === PARTICLE_RENDERER.SHRINK) {
             if (this.alpha < this.a) this.alpha += this.a/20;
             this.shrink_frame += 1;
-            let v = 0; // this.velocity;
-            v += RENDERER.shrinkSpeedCurve(this.shrink_frame);// * this.projection;
+            let v = this.velocity;
+            v += RENDERER.shrinkSpeedCurve(this.shrink_frame) * this.projection;
             let dy = v * Math.sin(this.direction);
             let dx = v * Math.cos(this.direction);
             this.y += dy;
             this.x += dx;
             if ((dx < 0 && this.x <= this.shrink_dest) || (dx > 0 && this.x >= this.shrink_dest)) {
-                this.state = this.SHRINK_FADEOUT;
+                this.state = PARTICLE_RENDERER.SHRINK_FADEOUT;
             }
-        } else if (this.state === this.SHRINK_FADEOUT) {
+            if (this.shrink_frame >= RENDERER.SHRINK_TIME1 + RENDERER.SHRINK_TIME2) {
+                if (this.type !== 's') {
+                    this.state = PARTICLE_RENDERER.FLOAT;
+                }
+            }
+        } else if (this.state === PARTICLE_RENDERER.SHRINK_FADEOUT) {
             if (this.alpha > 0) this.alpha -= 0.15;
-        } else if (this.state === this.MIC) {
+            else this.state = this.IDLE;
+        } else if (this.state === PARTICLE_RENDERER.MIC) {
             this.mic_frame += 1;
-            if (this.r > 3) this.r -= 0.1;
+            if (this.r > SHAPE_RENDERER.CENTER_POINT) this.r -= 0.1;
 
-            if (this.mic_frame > this.mic_time) {
-                this.reborn();
-            }
-
-            if (this.mic_frame <= this.mic_time) {
-                this.x = this.toMicStart.x + this.toMic.x * RENDERER.toMicX(this.mic_frame);
+            if (this.mic_frame <= RENDERER.MIC_TIME_MIN) {
+                this.x = this.toMicStart.x + this.toMic.x * this.mic_frame/RENDERER.MIC_TIME_MIN;//RENDERER.toMicX(this.mic_frame);
                 this.y = this.toMicStart.y + this.toMic.y * RENDERER.toMicY(this.mic_frame);
             }
         }
-        if (this.state !== this.IDLE) {
+
+        if (this.state !== PARTICLE_RENDERER.IDLE) {
             this.draw(ctx);
         }
     },
     
     explode : function () {
-        if (this.state === this.IDLE || this.state === this.MIC) return;
-        this.state = this.EXPLODE;
-        if (this.id > 0) this.direction = Math.atan2(this.y - U.HEIGHT/2, this.x - U.WIDTH/2);
+        if (this.type === 's') {
+            console.log('shrink explodes');
+            return;
+        }
+        if (this.state === PARTICLE_RENDERER.IDLE || this.state === PARTICLE_RENDERER.MIC) return;
+        this.state = PARTICLE_RENDERER.EXPLODE;
+        this.direction = Math.atan2(this.y - U.center.Y, this.x - U.center.X);
         this.explode_frame = 0;
     },
     
     shrink: function (x, y) {
-        if (this.state === this.EXPLODE || this.state === this.SHRINK) return;
-        this.alpha = 0;
+        if (this.state === PARTICLE_RENDERER.IDLE ||
+            this.state === PARTICLE_RENDERER.MIC ||
+            this.state === PARTICLE_RENDERER.EXPLODE) {
+            return;
+        }
+        if (this.type === 's') {
+            this.alpha = 0;
+        }
         this.shrink_dest = x;
         this.shrink_frame = 0;
         this.direction = Math.atan2(y - this.y, x - this.x);
-        this.state = this.SHRINK;
+        this.state = PARTICLE_RENDERER.SHRINK;
     },
     
     fadeout: function () {
@@ -719,13 +760,17 @@ Particle.prototype = {
     },
     
     activate : function () {
-        this.state = this.MIC;
-        this.mic_time = RENDERER.MIC_TIME_MIN; // + Math.floor(Math.random() * RENDERER.MIC_TIME_RANGE);
+        if (this.y > SHAPE_RENDERER.y || this.y < U.center.Y) return;
+        this.state = PARTICLE_RENDERER.MIC;
         this.mic_frame = 0;
         this.toMicStart = {x:this.x,
                            y:this.y};
         this.toMic = {x: SHAPE_RENDERER.x - this.x,
                       y: SHAPE_RENDERER.y - SHAPE_RENDERER.r_min/2 + 4 - this.y};
+    },
+    
+    micFinished : function () {
+        if (this.state === PARTICLE_RENDERER.MIC) this.reborn();
     }
 };
 
@@ -733,10 +778,19 @@ function print() {
     console.log(Date.now());
 }
 
+var count = 0;
+var start_time = Date.now();
+
 function animate() {
     PARTICLE_RENDERER.updateParticles();
     TEXT_RENDERER.updateTexts();
     SHAPE_RENDERER.update();
+    // count += 1;
+    // if (count % 100 === 0) {
+    //     console.log('frame rate', Date.now() - start_time);
+    //     start_time = Date.now();
+    //     count = 0;
+    // }
     requestAnimationFrame(animate);
 }
 
