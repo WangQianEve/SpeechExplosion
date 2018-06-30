@@ -1,5 +1,4 @@
 prev_images/*
 docs/*
-fonts/*
 .*
 !.gitignore
