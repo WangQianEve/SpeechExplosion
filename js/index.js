@@ -104,7 +104,7 @@ var SHAPE_RENDERER = {
         this.ctx = this.canvas.getContext("2d");
         this.x = U.center.X;
         this.y = U.HEIGHT*0.8;
-        this.N = 90; // frames in a loop
+        this.N = 120; // frames in a loop
         this.r_min = 60;
         this.r_max = 180;
         this.r_step = (this.r_max - this.r_min) / this.N;
@@ -802,8 +802,8 @@ function init() {
     SHAPE_RENDERER.init();
     animate();
     waitEnd();
-    setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
-    setInterval(function () {SHAPE_RENDERER.genWave();}, 1000);
+    // setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
+    setInterval(function () {SHAPE_RENDERER.genWave();}, 800);
     test();
 }
 
@@ -818,20 +818,20 @@ function mockInput(baseTime) {
     SHAPE_RENDERER.enter();
     setTimeout(function () {
         SHAPE_RENDERER.leave();
-    }, 4000);
+    }, 5000);
 
-    // var baseTime = baseTime || 0;
-    // setTimeout(function() {
-    //     enterText('我要数数1，', 4);
-    // }, baseTime);
-    //
-    // setTimeout(function() {
-    //     enterText('我要给你数数1，我要数数2，', 4);
-    // }, baseTime);
-    //
-    // setTimeout(function() {
-    //     enterText('我要给你数数1，我要数数2，我要数数3，我要数数4', 4);
-    // }, baseTime + 200);
+    var baseTime = baseTime || 0;
+    setTimeout(function() {
+        enterText('我要数数，', 4);
+    }, baseTime + 6000);
+
+    setTimeout(function() {
+        enterText('我要数数这里有几', 4);
+    }, baseTime + 7000);
+
+    setTimeout(function() {
+        enterText('我要数数这里有几只可爱的鸭子', 4);
+    }, baseTime + 9000);
 
     // setTimeout(function() {
     //     enterText('马桑德'+TEXT_RENDERER.SEPARATOR+'不可以这样'+TEXT_RENDERER.SEPARATOR+'你好依图欢迎你你好我欢迎你啦啦啦', 4);
@@ -844,7 +844,7 @@ function mockInput(baseTime) {
 
 function mockContinuousInput() {
     mockInput();
-    var seconds = 5;
+    var seconds = 10;
     setTimeout(function() {
         mockContinuousInput();
     }, seconds * 1000);
