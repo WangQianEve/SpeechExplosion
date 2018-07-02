@@ -397,7 +397,7 @@ var TEXT_RENDERER = {
     },
 
     enterText : function () {
-        if (this.texts.length === 0 && this.default === true)
+        if (this.texts.length === 0 && this.default === true && SHAPE_RENDERER.state === SHAPE_RENDERER.HIDE)
             enterText(this.DEFAULTS[Math.floor(Math.random() * (this.DEFAULTS.length - 0.01))]);
     },
 
