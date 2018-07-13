@@ -20,7 +20,7 @@ var U = {
     END_DUR : 5000, // MS
     init: function () {
         this.center.X = this.WIDTH/2;
-        this.center.Y = this.HEIGHT/3;
+        this.center.Y = this.HEIGHT/2;
         console.log("U ",this.WIDTH, this.HEIGHT);
     }
 };
@@ -103,10 +103,10 @@ var SHAPE_RENDERER = {
         this.canvas = RENDERER.initCanvasById("shapeCanvas");
         this.ctx = this.canvas.getContext("2d");
         this.x = U.center.X;
-        this.y = U.HEIGHT*0.8;
+        this.y = U.HEIGHT*0.9;
         this.N = 120; // frames in a loop
-        this.r_min = 60;
-        this.r_max = 180;
+        this.r_min = 100;
+        this.r_max = 220;
         this.r_step = (this.r_max - this.r_min) / this.N;
         this.a_min = 0;
         this.a_max = 0.3;
@@ -174,7 +174,7 @@ var SHAPE_RENDERER = {
     drawCircle: function (frame) {
         let ctx = this.ctx;
         let r1 = this.ENTER_FRAME * 2 * this.revealCurve(frame);
-        ctx.strokeStyle = '#C5C0B4'; // C5C0B4
+        ctx.strokeStyle = '#000000'; // C5C0B4
         ctx.lineWidth = this.r_min * 2.4 - r1 * 2;
         ctx.beginPath();
         ctx.arc(this.x, this.y - this.r_min/2, this.r_min * 1.2 , 0 , 2*Math.PI , true); // t * this.r_min / this.ENTER_FRAME
@@ -348,8 +348,8 @@ var TEXT_RENDERER = {
 
     MOVE_TIME : 100,  // FRAME
 
-    FONT_SIZE : 50,
-    FONT_SIZE_STEP : 0.15,
+    FONT_SIZE : 52,
+    FONT_SIZE_STEP : 0.13,
 
     shrink_end : 0,
     shrink_lock : false,
@@ -566,7 +566,7 @@ Textline.prototype = {
             if (this.fontsize >0) this.fontsize -= vy * TEXT_RENDERER.FONT_SIZE_STEP;
         }
 
-        if (this.y < 0) {
+        if (this.y < 0 || this.fontsize <= 0) {
             this.state = this.DEAD;
         }
         if (this.state !== this.HIDE) {
@@ -802,9 +802,9 @@ function init() {
     SHAPE_RENDERER.init();
     animate();
     waitEnd();
-    // setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
+    setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
     setInterval(function () {SHAPE_RENDERER.genWave();}, 800);
-    test();
+    // test();
 }
 
 function test() {
