@@ -329,7 +329,7 @@
 
         if (text.length > maxTexts) {
             var diff = text.length - maxTexts;
-            text = text.slice(text.length - maxTexts, text.length);
+            text = text.slice(diff, text.length);
             greyIdx = Math.max(0, greyIdx - diff);
         }
         */

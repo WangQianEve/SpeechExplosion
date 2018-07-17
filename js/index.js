@@ -421,6 +421,8 @@ var TEXT_RENDERER = {
         };
 
         this.default = false;
+        this.prev_last_determined = '';
+        this.cursor = TEXT_RENDERER.CHAR_PER_LINE;
     },
 
     removeFirst : function() {
@@ -476,8 +478,48 @@ var TEXT_RENDERER = {
         }
     },
 
-    setText : function (text) {
+    setText : function (text, greyIdx) {
         this.default = false;
+        // if (_.isUndefined(greyIdx)) {
+        //     greyIdx = text.length;
+        // }
+        // let determined = text.slice(0, greyIdx).split(this.SEPARATOR);
+        // let undetermined = text.slice(greyIdx, text.length);
+        // if (determined[determined.length - 1]==='') determined.pop();
+        // let last_determined = determined[determined.length-1];
+
+        // 1. update determined
+
+        // if (last_determined !== this.prev_last_determined && last_determined !== '') {
+        //     if (last_determined === '') {
+        //         // add new undertermined text
+        //     } else {
+        //         if (this.cursor < 0) {
+        //             // update two lines
+        //             if (this.cursor + undetermined.length > TEXT_RENDERER.CHAR_PER_LINE) {
+        //                 // add new:
+        //                 // undetermined.slice(TEXT_RENDERER.CHAR_PER_LINE - this.cursor, undetermined.length);
+        //             }
+        //         } else if (this.cursor === 0) {
+        //             console.log('something goes wrong');
+        //         } else {
+        //             // update one line
+        //             if (this.cursor + undetermined.length > TEXT_RENDERER.CHAR_PER_LINE) {
+        //                 // add new
+        //                 // undetermined.slice(TEXT_RENDERER.CHAR_PER_LINE - this.cursor, undetermined.length);
+        //             }
+        //         }
+        //     }
+        //     // update new
+        // }
+        // // update current and prev
+        // this.cursor += last_determined.length;
+        // if (this.cursor > TEXT_RENDERER.CHAR_PER_LINE) {
+        //     // add lines
+        // }
+
+        // 2. update undetermined
+
         let orgTexts = text.split(this.SEPARATOR);
         if (orgTexts.length === 0) return;
         let currentTexts = this.squeezeLines(orgTexts);
@@ -906,7 +948,7 @@ function mockContinuousInput() {
 }
 
 function enterText(text, greyIdx) {
-    TEXT_RENDERER.setText(text);
+    TEXT_RENDERER.setText(text, greyIdx);
     waitStable();
     waitEnd();
 }
