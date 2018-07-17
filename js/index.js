@@ -1,4 +1,4 @@
-// signal
+// Infrared signal reception
 var wsUri = "ws://localhost:9980";
 
 function testWebSocket()
@@ -21,17 +21,13 @@ function onClose(evt)
     writeToScreen("DISCONNECTED");
 }
 
-var signal = 1;
-
 function onMessage(evt)
 {
     writeToScreen('RESPONSE: ' + evt.data);
-    if (signal === 1) {
+    if (evt.data === '1') {
         SHAPE_RENDERER.enter();
-        signal = 0;
-    } else {
+    } else if (evt.data === '0') {
         SHAPE_RENDERER.leave();
-        signal = 1;
     }
 
 }
@@ -51,7 +47,8 @@ function writeToScreen(message)
 {
     console.log('[@Screen]', message);
 }
-//
+
+// Tool
 function cubicBezierGenerator(p1x, p1y, p2x, p2y) {
     let cubicBezier = simplifiedCubicBezier(p1x, p1y, p2x, p2y);
     return function(t) {
@@ -66,16 +63,45 @@ function cubicBezierGenerator(p1x, p1y, p2x, p2y) {
     };
 }
 
+// True Start
+var S = { // user settings
+    TEST : 1, // 0-no test, 1-continuous test, 2-single test
+
+    STABLE_DUR : 3000, // time in MS, how long after input does the text explode.
+    END_DUR : 5000, // time in MS, how long after explosion does it start showing default texts
+    // below are times in FRAME
+    SHRINK_TIME1 :25, // speedup stage
+    SHRINK_TIME2 : 15, // the second speedup stage
+    SHRINK_MAX_SPEED1 : 15,
+    SHRINK_MAX_SPEED2 : 70, // accumulated on speed1
+    EXPLODE_TIME1 : 10, // speedup stage
+    EXPLODE_TIME2 : 40, // slowdown stage
+    EXPLODE_MAX_SPEED : 200,
+    MIC_TIME : 40,
+    MIC_TIME_RANGE : 480, // time in MS, this + MIC_TIME is the max total time cost for particles to gather around mic.
+    SHAPE_ENTER_FRAME : 30, // time cost to reveal the ring
+    FRAME_DUR : 16, // how long does a frame cost
+
+    // about center rings
+    CENTER_POINT_SIZE : 5, // size of particle in the ring
+    SHAPE_Y : 0.88, // ring's position in percentage
+    SHAPE_LOOP_TIME : 120, // frames in a loop
+    SHAPE_R_MIN : 100, // loop size
+    SHAPE_R_MAX : 220,
+    SHAPE_A_MIN : 0.2, // alpha
+    SHAPE_A_MAX : 0.6,
+    SHAPE_LEAVE_TIME : 20, // time in frames, time to fade away
+    SHAPE_GEN_TIME : 800,
+};
+
 var U = {
     WIDTH: window.innerWidth,
     HEIGHT: window.innerHeight,
     center: {X:0, Y:0},
-    STABLE_DUR : 3000, // MS
-    END_DUR : 5000, // MS
     init: function () {
         this.center.X = this.WIDTH/2;
         this.center.Y = this.HEIGHT/2;
-        console.log("U ",this.WIDTH, this.HEIGHT);
+        this.H_DIAG = Math.sqrt(this.WIDTH * this.WIDTH + this.HEIGHT * this.HEIGHT) / 2;
     }
 };
 
@@ -83,54 +109,42 @@ var waitStable = _.debounce(function() {
     if (TEXT_RENDERER.hasFront()) {
         PARTICLE_RENDERER.explode();
     }
-}, U.STABLE_DUR);
+}, S.STABLE_DUR);
 
 var waitEnd = _.debounce(function() {
     TEXT_RENDERER.enterDefault();
-}, U.END_DUR);
+}, S.END_DUR);
 
 var RENDERER = {
-
-    FRAME_DUR : 16,
-    SHRINK_TIME1 :25, // FRAME
-    SHRINK_TIME2 : 15, // FRAME
-    SHRINK_MAX_SPEED1 : 15, // FRAME
-    SHRINK_MAX_SPEED2 : 70, // FRAME
-    SPEEDUP_TIME : 10, // FRAME
-    SLOWDOWN_TIME : 40, // FRAME
-    EXPLODE_MAX_SPEED : 200, // FRAME
-    MIC_TIME_MIN : 40,
-    MIC_TIME_RANGE : 30,
-
     init :function () {
-        this.EXPLODE_TIME = this.SPEEDUP_TIME + this.SLOWDOWN_TIME;
+        this.EXPLODE_TIME = S.EXPLODE_TIME1 + S.EXPLODE_TIME2;
+
         this.explodeSpeedCurve = function (t) {
-            if (t < this.SPEEDUP_TIME) {
-                return this.EXPLODE_MAX_SPEED * cubicBezierGenerator(.5, 0, .5, 1)(t/this.SPEEDUP_TIME);
+            if (t < S.EXPLODE_TIME1) {
+                return S.EXPLODE_MAX_SPEED * cubicBezierGenerator(.5, 0, .5, 1)(t/S.EXPLODE_TIME1);
             } else {
-                return this.EXPLODE_MAX_SPEED * cubicBezierGenerator(.5, 0, .5, 1)(1 - (t-this.SPEEDUP_TIME)/this.SLOWDOWN_TIME);
+                return S.EXPLODE_MAX_SPEED * cubicBezierGenerator(.5, 0, .5, 1)(1 - (t-S.EXPLODE_TIME1)/S.EXPLODE_TIME2);
             }
         };
+        
         this.shrinkSpeedCurve = function (t) {
-            if (t < this.SHRINK_TIME1) {
-                return this.SHRINK_MAX_SPEED1 * cubicBezierGenerator(0, .5, .5, 1)(t/this.SHRINK_TIME1);
-            } else if (t - this.SHRINK_TIME1 < this.SHRINK_TIME2) {
-                return this.SHRINK_MAX_SPEED1 + this.SHRINK_MAX_SPEED2 * cubicBezierGenerator(.5, 0, 1, .5)((t - this.SHRINK_TIME1)/this.SHRINK_TIME2);
+            if (t < S.SHRINK_TIME1) {
+                return S.SHRINK_MAX_SPEED1 * cubicBezierGenerator(0, .5, .5, 1)(t/S.SHRINK_TIME1);
+            } else if (t - S.SHRINK_TIME1 < S.SHRINK_TIME2) {
+                return S.SHRINK_MAX_SPEED1 + S.SHRINK_MAX_SPEED2 * cubicBezierGenerator(.5, 0, 1, .5)((t - S.SHRINK_TIME1)/S.SHRINK_TIME2);
             } else {
-                return this.SHRINK_MAX_SPEED1 + this.SHRINK_MAX_SPEED2;
+                return S.SHRINK_MAX_SPEED1 + S.SHRINK_MAX_SPEED2;
             }
         };
 
         this.toMicX = function (t) {
-            if (t >= this.MIC_TIME_MIN) return 1;
-            return cubicBezierGenerator(0, .6, .6, .9)(t/this.MIC_TIME_MIN);
+            if (t >= S.MIC_TIME)
+            return cubicBezierGenerator(0, .6, .6, .9)(t/S.MIC_TIME);
         };
 
         this.toMicY = function (t) {
-            let ret = 0
-            if (t >= this.MIC_TIME_MIN) ret = 1;
-            else ret = cubicBezierGenerator(.15, .6, .8, .5)(t/this.MIC_TIME_MIN);
-            return ret;
+            if (t >= S.MIC_TIME) return 1;
+            else return cubicBezierGenerator(.15, .6, .8, .5)(t/S.MIC_TIME);
         };
     },
 
@@ -150,24 +164,15 @@ var SHAPE_RENDERER = {
     HIDE : 0,
     ENTER : 1,
     RUN : 2,
-    ENTER_FRAME : 30,
-    CENTER_POINT : 4,
-
     init: function () {
+        this.SHAPE_LOOP_COUNT = Math.ceil(S.SHAPE_LOOP_TIME * S.FRAME_DUR / S.SHAPE_GEN_TIME) + 2; // max loop count
         this.canvas = RENDERER.initCanvasById("shapeCanvas");
         this.ctx = this.canvas.getContext("2d");
         this.x = U.center.X;
-        this.y = U.HEIGHT*0.9;
-        this.N = 120; // frames in a loop
-        this.r_min = 100;
-        this.r_max = 220;
-        this.r_step = (this.r_max - this.r_min) / this.N;
-        this.a_min = 0;
-        this.a_max = 0.3;
-        this.a_step = (this.a_max-this.a_min) / this.N;
-
-        this.MAX = 4;
-        this.rings = Array.apply(null, Array(this.MAX)).map(function (item, i) {
+        this.y = U.HEIGHT*S.SHAPE_Y;
+        this.r_step = (S.SHAPE_R_MAX - S.SHAPE_R_MIN) / S.SHAPE_LOOP_TIME;
+        this.a_step = (S.SHAPE_A_MAX-S.SHAPE_A_MIN) / S.SHAPE_LOOP_TIME;
+        this.rings = Array.apply(null, Array(SHAPE_RENDERER.SHAPE_LOOP_COUNT)).map(function (item, i) {
             return {r:0, a:0};
         });
         this.center = new Image();
@@ -178,17 +183,16 @@ var SHAPE_RENDERER = {
         this.state = this.HIDE;
         this.leaving = false;
         this.center_a = 1;
-
         this.revealCurve = function (t) {
-            if (t >= this.ENTER_FRAME) return 1;
-            return cubicBezierGenerator(.6, .1, .9, .3)(t/this.ENTER_FRAME);
+            if (t >= S.SHAPE_ENTER_FRAME) return 1;
+            return cubicBezierGenerator(.6, .1, .9, .3)(t/S.SHAPE_ENTER_FRAME);
         };
-
+        this.leaving_a_step = 1 / S.SHAPE_LEAVE_TIME;
     },
 
     update: function () {
         if (this.leaving) {
-            this.center_a -= 0.05;
+            this.center_a -= this.leaving_a_step;
             if (this.center_a <= 0) {
                 this.endLeave();
             }
@@ -197,11 +201,11 @@ var SHAPE_RENDERER = {
         RENDERER.clearCtx(ctx);
         ctx.save();
         if (this.state === this.RUN) {
-            for(let i = 0; i < this.MAX; i++) {
-                if(this.rings[i]['r'] <= this.r_min) {continue;}
+            for(let i = 0; i < SHAPE_RENDERER.SHAPE_LOOP_COUNT; i++) {
+                if(this.rings[i]['r'] <= S.SHAPE_R_MIN) {continue;}
                 this.rings[i]['r'] -= this.r_step;
                 if (this.leaving) {
-                    let a = this.rings[i]['a'] - 0.02; // 20 frames from 0.3 to 0
+                    let a = this.rings[i]['a'] - this.leaving_a_step;
                     this.rings[i]['a'] = Math.max(0, a);
                 } else this.rings[i]['a'] += this.a_step;
                 ctx.globalAlpha = this.rings[i]['a'];
@@ -209,17 +213,16 @@ var SHAPE_RENDERER = {
                 this.ctx.drawImage(this.ring, this.x - r/2, this.y - r/2, r, r);
             }
             ctx.globalAlpha = this.center_a;
-            this.ctx.drawImage(this.center, this.x - this.r_min/2, this.y - this.r_min/2, this.r_min, this.r_min);
+            ctx.drawImage(this.center, this.x - S.SHAPE_R_MIN/2, this.y - S.SHAPE_R_MIN/2, S.SHAPE_R_MIN, S.SHAPE_R_MIN);
         }
         if (this.state === this.ENTER) {
-            // ctx.globalAlpha = 0.5;
             ctx.globalAlpha = 1;
-            ctx.drawImage(this.center, this.x - this.r_min/2, this.y - this.r_min/2, this.r_min, this.r_min);
+            ctx.drawImage(this.center, this.x - S.SHAPE_R_MIN/2, this.y - S.SHAPE_R_MIN/2, S.SHAPE_R_MIN, S.SHAPE_R_MIN);
             ctx.restore();
             this.drawCircle(this.enter_frame);
             this.enter_frame += 1;
-            if(this.enter_frame >= this.ENTER_FRAME){
-                this.state = this.RUN; 
+            if(this.enter_frame >= S.SHAPE_ENTER_FRAME){
+                this.state = this.RUN;
             }
         }
         ctx.restore();
@@ -227,32 +230,31 @@ var SHAPE_RENDERER = {
 
     drawCircle: function (frame) {
         let ctx = this.ctx;
-        let r1 = this.ENTER_FRAME * 2 * this.revealCurve(frame);
+        let r1 = S.SHAPE_ENTER_FRAME * 2 * this.revealCurve(frame);
         ctx.strokeStyle = '#000000'; // C5C0B4
-        ctx.lineWidth = this.r_min * 2.4 - r1 * 2;
+        ctx.lineWidth = S.SHAPE_R_MIN * 2.4 - r1 * 2;
         ctx.beginPath();
-        ctx.arc(this.x, this.y - this.r_min/2, this.r_min * 1.2 , 0 , 2*Math.PI , true); // t * this.r_min / this.ENTER_FRAME
+        ctx.arc(this.x, this.y - S.SHAPE_R_MIN/2, S.SHAPE_R_MIN * 1.2 , 0 , 2*Math.PI , true); // t * S.SHAPE_R_MIN / S.SHAPE_ENTER_FRAME
         ctx.stroke();
         ctx.closePath();
         // draw small ones
-        let a = r1*r1/this.r_min;
-        let yy = this.y - this.r_min/2 + a + 3;
+        let a = r1*r1/S.SHAPE_R_MIN;
+        let yy = this.y - S.SHAPE_R_MIN/2 + a + 3;
         let b = Math.sqrt(r1*r1 - a*a) - 3;
         ctx.beginPath();
-        ctx.arc(this.x - b, yy, this.CENTER_POINT , 0 , 2*Math.PI , true);
-        ctx.arc(this.x + b, yy, this.CENTER_POINT , 0 , 2*Math.PI , true);
-        ctx.fillStyle = "rgba(255,255,255,"+(0.5-a/this.r_min)+")";
+        ctx.arc(this.x - b, yy, S.CENTER_POINT_SIZE , 0 , 2*Math.PI , true);
+        ctx.arc(this.x + b, yy, S.CENTER_POINT_SIZE , 0 , 2*Math.PI , true);
+        ctx.fillStyle = "rgba(255,255,255,1)";
         ctx.fill();
         ctx.restore();
     },
 
     genWave: function () {
-        // console.log("ds");
         if(this.state !== this.RUN) return;
-        this.rings[this.current]['r'] = this.r_max;
-        this.rings[this.current]['a'] = this.a_min;
+        this.rings[this.current]['r'] = S.SHAPE_R_MAX;
+        this.rings[this.current]['a'] = S.SHAPE_A_MIN;
         this.current += 1;
-        if(this.current >= this.MAX) this.current = 0;
+        if(this.current >= SHAPE_RENDERER.SHAPE_LOOP_COUNT) this.current = 0;
     },
 
     enter : function () {
@@ -264,11 +266,10 @@ var SHAPE_RENDERER = {
             PARTICLE_RENDERER.actFinish();
             SHAPE_RENDERER.state = SHAPE_RENDERER.ENTER;
             SHAPE_RENDERER.enter_frame = 0;
-        }, (RENDERER.MIC_TIME_MIN + RENDERER.MIC_TIME_RANGE) * RENDERER.FRAME_DUR);
+        }, S.MIC_TIME * S.FRAME_DUR + S.MIC_TIME_RANGE);
         this.center_a = 1;
-        // console.log('enter', this.state);
     },
-    
+
     leave : function () {
         this.leaving = true;
     },
@@ -281,6 +282,17 @@ var SHAPE_RENDERER = {
 };
 
 var PARTICLE_RENDERER = {
+    // user settings
+    FLOAT_DIR_STEP: 0.03,
+    V : [0.2, 0.6],
+    R : [3, 4], // max r is r[0] + r[1]
+    A : [0.2, 0.8], // max a is a[0] + a[1]
+    CHANGE_DIR_MAX_FRAME : 200,
+    BG_PARTICLE_N : 20,
+    MIC_PARTICLE_N : 10,
+    SHRINK_PARTICLE_N : 300,
+
+    // states
     IDLE : -1,
     APPEAR : 0,
     FLOAT : 1,
@@ -290,22 +302,17 @@ var PARTICLE_RENDERER = {
     SHRINK_FADEOUT : 5,
     MIC : 6,
     SHRINK_MOVE : 7,
-    FLOAT_DIR_STEP: 0.03,
-    V : [0.2, 0.6],
-    R : [3, 4],
-    A : [0.2, 0.8],
-    CHANGE_DIR_MAX_FRAME : 200,
 
     init: function() {
         this.canvas = RENDERER.initCanvasById("particleCanvas");
         this.ctx = this.canvas.getContext("2d");
-        this.particles = Array.apply(null, Array(20)).map(function (item, i) {
+        this.particles = Array.apply(null, Array(this.BG_PARTICLE_N)).map(function (item, i) {
             return new Particle('p', 0, 0);
         });
-        this.micParticles = Array.apply(null, Array(10)).map(function (item, i) {
+        this.micParticles = Array.apply(null, Array(this.MIC_PARTICLE_N)).map(function (item, i) {
             return new Particle('m', 0, 0);
         });
-        this.shrinkParticles = Array.apply(null, Array(300)).map(function (item, i) {
+        this.shrinkParticles = Array.apply(null, Array(this.SHRINK_PARTICLE_N)).map(function (item, i) {
             return new Particle('s', 0, 0);
         });
     },
@@ -334,7 +341,6 @@ var PARTICLE_RENDERER = {
     },
 
     explode: function () {
-        console.log("particle exploding");
         this.getExplodeParticlesFromPixels(TEXT_RENDERER.pixels);
         _.each(this.particles, function (particle) {
             particle.explode();
@@ -351,17 +357,15 @@ var PARTICLE_RENDERER = {
     },
 
     shrink: function (hwidth, hheight) {
-        let w_margin = U.WIDTH;
-        let h_margin = U.HEIGHT;
+        let dmin = U.H_DIAG;
+        let drange = U.H_DIAG;
         _.each(this.shrinkParticles, function (particle) {
-            let x_ = 1;
-            let y_ = 1;
-            if (Math.random() >= 0.5) x_ = -1;
-            if (Math.random() >= 0.5) y_ = -1;
-            particle.x = U.center.X + x_ * ( Math.random() * w_margin );
-            particle.y = U.center.Y + y_ * ( Math.random() * h_margin);
+            let angle = Math.random() * 2 * Math.PI;
+            let dist = dmin + Math.random() * drange;
+            particle.x = U.center.X + Math.sin(angle) * dist;
+            particle.y = U.center.Y + Math.cos(angle) * dist;
             particle.shrink(U.center.X - hwidth + Math.random() * 2 * hwidth,
-                            U.center.Y - hheight + 15 + Math.random() * 2 * hheight);
+                U.center.Y - hheight + 15 + Math.random() * 2 * hheight);
         });
         _.each(this.particles, function (particle) {
             particle.shrink(U.center.X, U.center.Y);
@@ -375,7 +379,7 @@ var PARTICLE_RENDERER = {
         _.each(this.micParticles, function (particle) {
             setTimeout(function () {
                 particle.activate();
-            },Math.random() * RENDERER.MIC_TIME_RANGE * RENDERER.FRAME_DUR);
+            },Math.random() * S.MIC_TIME_RANGE);
         });
     },
 
@@ -387,24 +391,22 @@ var PARTICLE_RENDERER = {
 };
 
 var TEXT_RENDERER = {
+    // user settings
     SEPARATOR : ' ',
     LINE_LIMIT : 5,
-    texts : [],
-    numOfLines : 0,
     CHAR_PER_LINE : 8,
     FADEIN_STEP : 0.05,
     FADEOUT_STEP : 0.1,
     MOVE_ALPHA_STEP : 0.005,
-
     MAX_STEP_Y : 10,
     MIN_STEP_Y : 2,
     MOVE_SPEED_Y: 1,
-
     MOVE_TIME : 100,  // FRAME
-
-    FONT_SIZE : 52,
+    FONT_SIZE : 78,
     FONT_SIZE_STEP : 0.13,
 
+    texts : [],
+    numOfLines : 0,
     shrink_end : 0,
     shrink_lock : false,
 
@@ -479,12 +481,14 @@ var TEXT_RENDERER = {
         let orgTexts = text.split(this.SEPARATOR);
         if (orgTexts.length === 0) return;
         let currentTexts = this.squeezeLines(orgTexts);
+        if (currentTexts.length === 0) return;
         if (currentTexts.length === this.numOfLines) { // same length
             for (let i = 1; i <= Math.min(this.texts.length , 2); ++i) { // update last two lines
                 this.texts[this.texts.length - i].text = currentTexts[this.numOfLines - i];
-                console.log('update 2',this.texts[this.texts.length - i].text);
+                // console.log('update 2', i, currentTexts, this.texts[this.texts.length - i].text);
             }
         } else if (currentTexts.length > this.numOfLines) { // add lines
+            // console.log(currentTexts, 'hey');
             if (currentTexts.length - 1 === this.numOfLines) { // add one line
                 if ( this.texts.length > 0 ) { // update one
                     this.texts[this.texts.length - 1].text = currentTexts[currentTexts.length - 2];
@@ -505,7 +509,11 @@ var TEXT_RENDERER = {
                     time = Math.min(this.shrink_end - new Date().getTime(), 450);
                 }
             }
-            TEXT_RENDERER.texts.push(new Textline(currentTexts[currentTexts.length - 1], time));
+            if (typeof(currentTexts[currentTexts.length - 1]) !== "undefined") {
+                TEXT_RENDERER.texts.push(new Textline(currentTexts[currentTexts.length - 1], time));
+            } else {
+                console.log('udf! at creation');
+            }
         }
         this.numOfLines = currentTexts.length;
     },
@@ -540,6 +548,7 @@ var TEXT_RENDERER = {
         let ret = false;
         if (this.texts.length <= 0) return false;
         let lastLine = this.texts[this.texts.length - 1];
+        // if (typeof(lastLine.text) === "undefined") return false;
         if (lastLine.text.length <= 0 || !lastLine.state == lastLine.FRONT) return false;
         this.getTextPixelsFromCtx();
         this.numOfLines = 0;
@@ -549,7 +558,7 @@ var TEXT_RENDERER = {
         });
         return true;
     }
-}
+};
 
 function Textline(text, delay) {
     // console.log('new Textline', text, delay);
@@ -577,6 +586,9 @@ Textline.prototype = {
         ctx.fillStyle = "rgba(255,255,255,"+this.alpha+")";
         ctx.font = this.fontsize + "px HYWenHei";
         var endY = this.y + 0.5 * this.fontsize;
+        if (typeof(this.text) === "undefined") {
+            return;
+        }
         var endX = this.x - this.text.length * this.fontsize / 2;
         for (var idx = 0; idx < this.text.length; idx++) {
             ctx.fillText( this.text[idx], endX, endY);
@@ -626,7 +638,7 @@ Textline.prototype = {
         if (this.state !== this.HIDE) {
             this.draw(ctx);
         } else {
-            this.delay -= RENDERER.FRAME_DUR;
+            this.delay -= S.FRAME_DUR;
             if (this.delay <= 0) {
                 this.state = this.APPEAR;
                 TEXT_RENDERER.checkFirstLines(this.text);
@@ -760,7 +772,7 @@ Particle.prototype = {
             if ((dx < 0 && this.x <= this.shrink_dest) || (dx > 0 && this.x >= this.shrink_dest)) {
                 this.state = PARTICLE_RENDERER.SHRINK_FADEOUT;
             }
-            if (this.shrink_frame >= RENDERER.SHRINK_TIME1 + RENDERER.SHRINK_TIME2) {
+            if (this.shrink_frame >= S.SHRINK_TIME1 + S.SHRINK_TIME2) {
                 if (this.type !== 's') {
                     this.state = PARTICLE_RENDERER.FLOAT;
                 }
@@ -770,10 +782,9 @@ Particle.prototype = {
             else this.state = this.IDLE;
         } else if (this.state === PARTICLE_RENDERER.MIC) {
             this.mic_frame += 1;
-            if (this.r > SHAPE_RENDERER.CENTER_POINT) this.r -= 0.1;
-
-            if (this.mic_frame <= RENDERER.MIC_TIME_MIN) {
-                this.x = this.toMicStart.x + this.toMic.x * this.mic_frame/RENDERER.MIC_TIME_MIN;//RENDERER.toMicX(this.mic_frame);
+            if (this.r > S.CENTER_POINT_SIZE) this.r -= 0.1;
+            if (this.mic_frame <= S.MIC_TIME) {
+                this.x = this.toMicStart.x + this.toMic.x * this.mic_frame/S.MIC_TIME;//RENDERER.toMicX(this.mic_frame);
                 this.y = this.toMicStart.y + this.toMic.y * RENDERER.toMicY(this.mic_frame);
             }
         }
@@ -782,7 +793,7 @@ Particle.prototype = {
             this.draw(ctx);
         }
     },
-    
+
     explode : function () {
         if (this.type === 's') {
             console.log('shrink explodes');
@@ -793,7 +804,7 @@ Particle.prototype = {
         this.direction = Math.atan2(this.y - U.center.Y, this.x - U.center.X);
         this.explode_frame = 0;
     },
-    
+
     shrink: function (x, y) {
         if (this.state === PARTICLE_RENDERER.IDLE ||
             this.state === PARTICLE_RENDERER.MIC ||
@@ -808,43 +819,30 @@ Particle.prototype = {
         this.direction = Math.atan2(y - this.y, x - this.x);
         this.state = PARTICLE_RENDERER.SHRINK;
     },
-    
+
     fadeout: function () {
         this.state = this.SHRINK_FADEOUT;
     },
-    
+
     activate : function () {
         if (this.y > SHAPE_RENDERER.y || this.y < U.center.Y) return;
         this.state = PARTICLE_RENDERER.MIC;
         this.mic_frame = 0;
         this.toMicStart = {x:this.x,
-                           y:this.y};
+            y:this.y};
         this.toMic = {x: SHAPE_RENDERER.x - this.x,
-                      y: SHAPE_RENDERER.y - SHAPE_RENDERER.r_min/2 + 4 - this.y};
+            y: SHAPE_RENDERER.y - S.SHAPE_R_MIN/2 + 4 - this.y};
     },
-    
+
     micFinished : function () {
         if (this.state === PARTICLE_RENDERER.MIC) this.reborn();
     }
 };
 
-function print() {
-    console.log(Date.now());
-}
-
-var count = 0;
-var start_time = Date.now();
-
 function animate() {
     PARTICLE_RENDERER.updateParticles();
     TEXT_RENDERER.updateTexts();
     SHAPE_RENDERER.update();
-    // count += 1;
-    // if (count % 100 === 0) {
-    //     console.log('frame rate', Date.now() - start_time);
-    //     start_time = Date.now();
-    //     count = 0;
-    // }
     requestAnimationFrame(animate);
 }
 
@@ -858,13 +856,15 @@ function init() {
     animate();
     waitEnd();
     setInterval(function () {TEXT_RENDERER.enterText();}, 5000);
-    setInterval(function () {SHAPE_RENDERER.genWave();}, 800);
-    test();
+    setInterval(function () {SHAPE_RENDERER.genWave();}, S.SHAPE_GEN_TIME);
+    if (S.TEST > 0) test();
 }
 
 function test() {
-    // mockContinuousInput();
-    mockInput();
+    if (S.TEST === 1)
+        mockContinuousInput();
+    else
+        mockInput();
 }
 
 window.onload = init;
@@ -877,17 +877,17 @@ function mockInput(baseTime) {
 
     var baseTime = baseTime || 0;
     setTimeout(function() {
-        enterText('我要数数，', 4);
-    }, baseTime + 2000);
-
-    setTimeout(function() {
-        enterText('我要数数这里有几', 4);
-    }, baseTime + 3000);
+        enterText('我要数数这里有', 4);
+    }, baseTime + 0);
 
     setTimeout(function() {
         enterText('我要数数这里有几只可爱的鸭子', 4);
-    }, baseTime + 4000);
+    }, baseTime + 1000);
 
+    // setTimeout(function() {
+    //     enterText('马桑德', 4);
+    // }, baseTime + 2000);
+    //
     // setTimeout(function() {
     //     enterText('马桑德'+TEXT_RENDERER.SEPARATOR+'不可以这样'+TEXT_RENDERER.SEPARATOR+'你好依图欢迎你你好我欢迎你啦啦啦', 4);
     // }, baseTime + 1200);
@@ -906,7 +906,6 @@ function mockContinuousInput() {
 }
 
 function enterText(text, greyIdx) {
-    // console.log("out enterText",text);
     TEXT_RENDERER.setText(text);
     waitStable();
     waitEnd();
@@ -915,7 +914,6 @@ function enterText(text, greyIdx) {
 var receiveText = (function() {
     var textLastTime = "";
     var greyIdxLastTime = 0;
-
     return function(text, greyIdx) {
         if (text !== textLastTime || greyIdx !== greyIdxLastTime) {
             enterText(text, greyIdx);
