@@ -915,16 +915,29 @@ function mockInput(baseTime) {
     SHAPE_RENDERER.enter();
     setTimeout(function () {
         SHAPE_RENDERER.leave();
-    }, 5000);
+    }, 8000);
 
-    var baseTime = baseTime || 0;
+    var baseTime = 2000;
     setTimeout(function() {
-        enterText('我要数数这里有', 4);
-    }, baseTime + 0);
+        enterText('你好', 4);
+    }, baseTime);
 
     setTimeout(function() {
-        enterText('我要数数这里有几只可爱的鸭子', 4);
+        enterText('你好，这是', 4);
+    }, baseTime + 500);
+
+    setTimeout(function() {
+        enterText('你好，这是语言', 4);
     }, baseTime + 1000);
+    setTimeout(function() {
+        enterText('你好，这是语言爆炸', 4);
+    }, baseTime + 1200);
+    setTimeout(function() {
+        enterText('你好，这是语言爆炸展示', 4);
+    }, baseTime + 1400);
+    setTimeout(function() {
+        enterText('你好，这是语言爆炸展示装置。', 4);
+    }, baseTime + 1600);
 
     // setTimeout(function() {
     //     enterText('马桑德', 4);
