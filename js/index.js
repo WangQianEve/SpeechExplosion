@@ -1,6 +1,9 @@
 // Infrared signal reception
 var wsUri = "ws://localhost:9980";
 
+let MAIN_COLOR = "0,0,0,";
+let BG_COLOR = '#fff';
+let MODE = "_1";
 function testWebSocket()
 {
     websocket = new WebSocket(wsUri);
@@ -176,9 +179,9 @@ var SHAPE_RENDERER = {
             return {r:0, a:0};
         });
         this.center = new Image();
-        this.center.src = 'images/center.png';
+        this.center.src = 'images/center'+MODE+'.png';
         this.ring = new Image();
-        this.ring.src = 'images/ring.png';
+        this.ring.src = 'images/ring'+MODE+'.png';
         this.current = 0;
         this.state = this.HIDE;
         this.leaving = false;
@@ -231,7 +234,7 @@ var SHAPE_RENDERER = {
     drawCircle: function (frame) {
         let ctx = this.ctx;
         let r1 = S.SHAPE_ENTER_FRAME * 2 * this.revealCurve(frame);
-        ctx.strokeStyle = '#000000'; // C5C0B4
+        ctx.strokeStyle = BG_COLOR; // C5C0B4
         ctx.lineWidth = S.SHAPE_R_MIN * 2.4 - r1 * 2;
         ctx.beginPath();
         ctx.arc(this.x, this.y - S.SHAPE_R_MIN/2, S.SHAPE_R_MIN * 1.2 , 0 , 2*Math.PI , true); // t * S.SHAPE_R_MIN / S.SHAPE_ENTER_FRAME
@@ -244,7 +247,7 @@ var SHAPE_RENDERER = {
         ctx.beginPath();
         ctx.arc(this.x - b, yy, S.CENTER_POINT_SIZE , 0 , 2*Math.PI , true);
         ctx.arc(this.x + b, yy, S.CENTER_POINT_SIZE , 0 , 2*Math.PI , true);
-        ctx.fillStyle = "rgba(255,255,255,1)";
+        ctx.fillStyle = "rgba("+MAIN_COLOR+"1)";
         ctx.fill();
         ctx.restore();
     },
@@ -625,7 +628,7 @@ Textline.prototype = {
     HIDE : 8,
 
     draw : function (ctx) {
-        ctx.fillStyle = "rgba(255,255,255,"+this.alpha+")";
+        ctx.fillStyle = "rgba("+MAIN_COLOR+this.alpha+")";
         ctx.font = this.fontsize + "px HYWenHei";
         var endY = this.y + 0.5 * this.fontsize;
         if (typeof(this.text) === "undefined") {
@@ -743,7 +746,7 @@ Particle.prototype = {
     draw : function (ctx) {
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.r , 0 , 2*Math.PI , true);
-        ctx.fillStyle = "rgba(255,255,255,"+this.alpha+")";
+        ctx.fillStyle = "rgba("+MAIN_COLOR+this.alpha+")";
         ctx.fill();
         ctx.restore();
     },
